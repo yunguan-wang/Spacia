@@ -130,3 +130,10 @@ dmypy.json
 
 # Additional
 .gitignore
+.Rproj.user
+scia-mil/renv/activate.R
+scia-mil/renv/settings.dcf
+scia-mil/scia-mil.Rproj
+.gitignore
+scia-mil/.Rprofile
+scia-mil/renv.lock
