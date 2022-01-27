@@ -72,17 +72,21 @@ exp_receiver=unlist(sapply(1:numbers_receiver, function(i) {
 exp_receiver=1*(exp_receiver>quantile(exp_receiver,q_receiver))
 
 ################  running the MIL model  ###################
-  
+
+# other input parameters
 ntotal=8000
 nwarm=4000
 nthin=10
 nchain=1
 
+thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
+
+# run MIL
 source('~/projects/MIL4ST/MIL_wrapper.R')
 
 Sys.time()
 results=MIL_C2Cinter(exp_receiver,pos_sender,exp_sender,
-  ntotal,nwarm,nthin,nchain)
+  ntotal,nwarm,nthin,nchain,thetas)
 Sys.time()
 
 ###########  checking the results  ###################
@@ -98,3 +102,7 @@ cor(beta[,1],colMeans(results$beta))
 # results$pip should be high for primary instances (pip=1)
 library(vioplot)
 vioplot(results$pip[pip==F],results$pip[pip==T])
+
+# FDRs
+results$FDRs
+plot(thetas,results$FDRs)
