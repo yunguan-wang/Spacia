@@ -59,7 +59,7 @@ exp_sender=sapply(1:numbers_receiver, function(i) {
 
 # gold standard coef 
 # for regression expression of senders onto the status of receivers
-beta=matrix(rnorm(nfeature),ncol=1)
+beta=matrix(rnorm(nfeature),ncol=1) # The beta should not make receiver to be negatives
 
 # functional status of the receiver cells
 # note: our model investigates all genes/pathways in the sending 
@@ -82,7 +82,7 @@ nchain=1
 thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
 # run MIL
-source('~/projects/MIL4ST/MIL_wrapper.R')
+source('MIL_wrapper.R')
 
 Sys.time()
 results=MIL_C2Cinter(exp_receiver,pos_sender,exp_sender,
@@ -106,3 +106,4 @@ vioplot(results$pip[pip==F],results$pip[pip==T])
 # FDRs
 results$FDRs
 plot(thetas,results$FDRs)
+
