@@ -1,4 +1,4 @@
-#' plot_interaction_prop
+#' plot_interaction_proportion
 #'
 #' @param prop_data a data.frame representing the proportion of types of cell-cell interaction
 #' @param coordinates a data.frame representing the cell coordinates with at least two columns of "pixel_x" and "pixel_y"
@@ -13,10 +13,13 @@
 #'
 #' @examples
 #' 
-#' img_path = "/archive/SCCC/Hoshida_lab/shared/fastq/SpatialTranscriptome/10X_public_dataset/MouseLiverNatComms/sample_1/img/scaled_0.1/CN73_Liver_HE_C1_0.1.jpg"
-#' coordinates = read.delim("/archive/SCCC/Hoshida_lab/shared/fastq/SpatialTranscriptome/10X_public_dataset/MouseLiverNatComms/sample_1/spots/spot_ST_CN73_Liver_C1_0.1.tsv.gz", sep="\t", header=T)
+#' setwd(system.file(package = "SCIA-MIL"))
+#' img_path = "data/MouseLiverST_C1/CN73_Liver_HE_C1_0.1.jpg"
+#' coordinates = read.delim("data/MouseLiverST_C1/spot_ST_CN73_Liver_C1_0.1.tsv.gz", sep="\t", header=T)
 #' rownames(coordinates) = with(coordinates, paste(x,y,sep="x"))
-#' spot_radius <- calculate_spot_radius(coordinates, fct)
+#' 
+#' #' # estimate the spot radius
+#' spot_radius <- calculate_spot_radius(coordinates, fct=0.25)
 #' 
 #' # simulate the interactive cells using the adjacent spots
 #' dist <- calculate_cell_dist(coordinates, max_dist=100*spot_radius)
@@ -38,11 +41,15 @@
 #' cell_types_all = colnames(prop_data)
 #' 
 #' # plot cell-cell interaction prop
-#' plot_interaction_prop(prop_data, coordinates, x_scale=1, cell_types_all, 
+#' plot_interaction_proportion(prop_data, coordinates, x_scale=1, cell_types_all, 
 #'                       img_path, scatterpie_alpha=1, pie_scale = 0.5)
 #' 
-plot_interaction_prop <- function( prop_data, coordinates, x_scale=1, cell_types_all, img_path=NULL, scatterpie_alpha=1, pie_scale = 0.8 )
+plot_interaction_proportion <- function( prop_data, coordinates, x_scale=1, cell_types_all, img_path=NULL, scatterpie_alpha=1, pie_scale = 0.8 )
 {
+    
+    library(ggplot2)
+    library(scatterpie)
+    
     if(0)
     {
         slice <- names(se_obj@images)[1]

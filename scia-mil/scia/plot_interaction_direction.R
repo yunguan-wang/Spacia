@@ -1,6 +1,6 @@
-#' plot_cell_connection
+#' plot_interaction_direction
 #'
-#' @param image_path a character value indicating the image path
+#' @param img_path a character value indicating the image path
 #' @param coordinates a data.frame for cell coordinates, where each row represents a cell, with pixel_x and pixel_y indicating the coordinates
 #' @param interaction a data frame for cell-cell interaction
 #' @param xoff a numeric value indicating the offset on x-axis relative to the original image
@@ -12,15 +12,13 @@
 #'
 #' @examples
 #' 
-#' # toy example
-#' 
-#' image_path = "/archive/SCCC/Hoshida_lab/shared/fastq/SpatialTranscriptome/10X_public_dataset/MouseLiverNatComms/sample_1/img/scaled_0.1/CN73_Liver_HE_C1_0.1.jpg"
-#' # im <- readImage(image_path)
-#' coordinates = read.delim("/archive/SCCC/Hoshida_lab/shared/fastq/SpatialTranscriptome/10X_public_dataset/MouseLiverNatComms/sample_1/spots/spot_ST_CN73_Liver_C1_0.1.tsv.gz", sep="\t", header=T)
+#' setwd(system.file(package = "SCIA-MIL"))
+#' img_path = "data/MouseLiverST_C1/CN73_Liver_HE_C1_0.1.jpg"
+#' coordinates = read.delim("data/MouseLiverST_C1/spot_ST_CN73_Liver_C1_0.1.tsv.gz", sep="\t", header=T)
 #' rownames(coordinates) = with(coordinates, paste(x,y,sep="x"))
 #' 
 #' # estimate the spot radius
-#' spot_radius <- calculate_spot_radius(coordinates, fct)
+#' spot_radius <- calculate_spot_radius(coordinates, fct=0.25)
 #' 
 #' # simulate the interactive cells using the adjacent spots
 #' dist <- calculate_cell_dist(coordinates, 4*spot_radius)
@@ -30,17 +28,17 @@
 #' interaction = with(dist, data.frame( i=i, j=j, weight=d, type=type ) )
 #' 
 #' # plot cell-cell interaction
-#' plot_cell_interaction(image_path, interaction, coordinates)
+#' plot_interaction_direction(img_path, interaction, coordinates)
 #' 
 #' 
-plot_cell_interaction <- function( image_path, interaction, coordinates, xoff=0, yoff=0, x_scale=1 )
+plot_interaction_direction <- function( img_path, interaction, coordinates, xoff=0, yoff=0, x_scale=1 )
 {
     library(EBImage)
     
     array_type <- "1k"
     fct <- ifelse(array_type == "1k", 0.25, 50/(sqrt(2)*100))
     
-    im <- readImage(image_path)
+    im <- readImage(img_path)
     
     display(im,method='raster')
     plot_spot_info(coordinates, spot_cols='yellow', barcode=F, fct=fct)
