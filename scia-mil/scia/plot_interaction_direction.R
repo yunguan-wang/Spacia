@@ -37,7 +37,7 @@
 #' 
 #' 
 plot_interaction_direction <- function( img_path, interaction, coordinates, x_scale=1, 
-                                        sender_col='darkred', reciever_col='steelblue', interaction_col='darkgreen',
+                                        sender_col='brown2', reciever_col='dodgerblue1', interaction_col='springgreen2',
                                         image_alpha=0.5, cell_alpha=1, interaction_alpha=5, interaction_size=0.1)
 {
     library(EBImage)
