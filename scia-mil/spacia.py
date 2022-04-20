@@ -6,11 +6,11 @@ Dependency
 R >= 4.0.2
     Rcpp
 if running in biohpc, need to do module purge; module load shared first.
-Python dependencies will be handeled automatically by installing the scia package.
+Python dependencies will be handeled automatically by installing the spacia package.
 
 Test:
 cd /project/shared/xiao_wang/projects/cell2cell_inter/data
-python ../code/scia-mil/scia.py mini_Counts.txt Spot_metadata.txt C_1 C_2 pathways.txt
+python ../code/spacia/spacia.py mini_Counts.txt Spot_metadata.txt C_1 C_2 pathways.txt
 """
 
 import os
@@ -22,14 +22,14 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
 
-def scia_worker(scia_job_params):
+def spacia_worker(spacia_job_params):
     """
     worker function for multiprocessing.
     """
-    scia_job_inputs = scia_job_params.split(' ')[2:5]
-    os.system('Rscript ' + scia_job_params)
+    spacia_job_inputs = spacia_job_params.split(' ')[2:5]
+    os.system('Rscript ' + spacia_job_params)
     # remove temp job input files
-    os.system('rm -f {}'.format(' '.join(scia_job_inputs)))
+    # os.system('rm -f {}'.format(' '.join(spacia_job_inputs)))
     return
 
 def calculate_neighbor_radius(
@@ -54,7 +54,6 @@ def calculate_neighbor_radius(
         elif (n_neighbors>target_n_neighbors) == (nn_r_min> target_n_neighbors):
             r_min = r_next
     return r_next
-
 class StreamToLogger(object):
     """
     Fake file-like stream object that redirects writes to a logger instance.
@@ -72,10 +71,12 @@ class StreamToLogger(object):
     def flush(self):
         pass
 
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Main function for running SCIA-MIL",
+        description="Main function for running spacia",
     )
 
     parser.add_argument(
@@ -111,7 +112,7 @@ if __name__ == "__main__":
         "--output_path", 
         "-o",
         type=str,
-        default = 'scia',
+        default = 'spacia',
         help="Output path"
     )
 
@@ -155,20 +156,8 @@ if __name__ == "__main__":
     n_neighbors = args.n_neighbors
     mcmc_params = args.mcmc_params.replace(',', ' ')
 
-    counts = pd.read_csv(counts, index_col=0, sep='\t')
-    # counts = counts.apply(lambda x: 1e6*x/x.sum(), axis=1)
-    spot_meta = pd.read_csv(spot_meta, index_col=0, sep='\t')
-    pathway_lib = pd.read_csv(pathway_lib, index_col=0, sep='\t')
-    # getting script path for supporting codes.
-    scia_path = os.path.abspath(__file__)
-    scia_path = "/".join(scia_path.split("/")[:-1]) + '/scia'
-    scia_script = os.path.join(scia_path, "SCIA_job.R")
-
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-
     # Setting up logs
-    log_fn = os.path.join(output_path, "scia_log.txt")
+    log_fn = os.path.join(output_path, "spacia_log.txt")
     if os.path.exists(log_fn):
         os.remove(log_fn)
     logging.basicConfig(
@@ -177,6 +166,19 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
         level="INFO",
     )
+    
+    counts = pd.read_csv(counts, index_col=0, sep='\t')
+    # counts = counts.apply(lambda x: 1e6*x/x.sum(), axis=1)
+    spot_meta = pd.read_csv(spot_meta, index_col=0, sep='\t')
+    pathway_lib = pd.read_csv(pathway_lib, index_col=0, sep='\t')
+    # getting script path for supporting codes.
+    spacia_path = os.path.abspath(__file__)
+    spacia_path = "/".join(spacia_path.split("/")[:-1]) + '/spacia'
+    spacia_script = os.path.join(spacia_path, "spacia_job.R")
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
     # redirects stdout and stderr to logger
     stdout_logger = logging.getLogger("STDOUT")
     sl = StreamToLogger(stdout_logger, logging.INFO)
@@ -185,7 +187,7 @@ if __name__ == "__main__":
     sl = StreamToLogger(stderr_logger, logging.ERROR)
     sys.stderr = sl
 
-######## Preparing scia jobs ########
+######## Preparing spacia jobs ########
     neighbor_r = calculate_neighbor_radius(
         spot_meta.iloc[:,:2], target_n_neighbors=n_neighbors)
     print(
@@ -207,8 +209,8 @@ if __name__ == "__main__":
     receiver_genes = pathway_lib.index.unique()
     print('Total number of receiver cells: {}'.format(senders.shape[0]))
     print('Total number of sender cells: {}'.format(len(sender_cells)))
-    # generate all scia jobs
-    scia_r_jobs_list = []
+    # generate all spacia jobs
+    spacia_r_jobs_list = []
     for _, receiver_gene in enumerate(receiver_genes):
         print('Processing {}'.format(receiver_gene))
         sender_genes = pathway_lib.loc[receiver_gene].iloc[:,0].unique()
@@ -222,27 +224,28 @@ if __name__ == "__main__":
         # NOTE: place holder rule for dichtomizing receiver gene exp
         exp_receiver = 0 + (exp_receiver > exp_receiver.median())
         recivers_mtx['exp_receiver'] = exp_receiver
-        job_id = '_'.join(['scia_job', receiver_gene])
+        job_id = '_'.join(['spacia_job', receiver_gene])
         # Write out R wrapper data
-        scia_job_inputs = []
+        spacia_job_inputs = []
         for df, f_name in zip(
             [sender_cts, sender_dist, recivers_mtx],
             ['_cts.txt', '_dist.txt', '_receiver.txt']):
             df.to_csv(
                 os.path.join(output_path, job_id+f_name), sep='\t')
-            scia_job_inputs.append(
+            spacia_job_inputs.append(
                 os.path.abspath(output_path) + '/' + job_id+f_name
             )
-        scia_job_params = ' '.join([
-            scia_script,
-            scia_script.replace('SCIA_job.R',''),
-            ' '.join(scia_job_inputs),
+        # construct spacia.R jobs
+        spacia_job_params = ' '.join([
+            spacia_script,
+            spacia_script.replace('spacia_job.R',''),
+            ' '.join(spacia_job_inputs),
             job_id,
             mcmc_params,
             output_path + '/'
             ]
             )
-        scia_r_jobs_list.append(scia_job_params)
+        spacia_r_jobs_list.append(spacia_job_params)
     # run all jobs using 16 processes
     with Pool(16) as p:
-        _ = p.map(scia_worker, scia_r_jobs_list)
+        _ = p.map(spacia_worker, spacia_r_jobs_list)

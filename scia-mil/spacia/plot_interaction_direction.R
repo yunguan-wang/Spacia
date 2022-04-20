@@ -18,7 +18,7 @@
 #'
 #' @examples
 #' 
-#' setwd(system.file(package = "SCIA-MIL"))
+#' setwd(system.file(package = "spacia"))
 #' img_path = "data/MouseLiverST_C1/CN73_Liver_HE_C1_0.1.jpg"
 #' coordinates = read.delim("data/MouseLiverST_C1/spot_ST_CN73_Liver_C1_0.1.tsv.gz", sep="\t", header=T)
 #' rownames(coordinates) = with(coordinates, paste(x,y,sep="x"))

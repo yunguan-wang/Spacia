@@ -134,6 +134,7 @@ dmypy.json
 scia-mil/renv/activate.R
 scia-mil/renv/settings.dcf
 scia-mil/scia-mil.Rproj
-.gitignore
 scia-mil/.Rprofile
 scia-mil/renv.lock
+scia-mil/.vscode/settings.json
+scia-mil/.Rhistory
