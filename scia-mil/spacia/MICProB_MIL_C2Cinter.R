@@ -7,8 +7,8 @@ getHyperPars <- function(tidydata){
     hp_mu_beta=rep(0, D),
     hp_mu_b=rep(0,2),
     
-    hp_Sig_beta = diag(c(16,rep(4,D-1)),D), 
-    hp_Sig_b = diag(c(16,rep(4,1)),2)
+    hp_Sig_beta = diag(c(1,rep(1,D-1)),D), 
+    hp_Sig_b = diag(c(1,rep(1,1)),2)
   )
   return(res)
 }

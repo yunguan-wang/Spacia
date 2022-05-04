@@ -73,7 +73,7 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
   for (nc in 1:nchain) {pip=cbind(pip,res_mcmc[[nc]]$pip)}
 
   b=c() # all samples of all MCMC chains
-  for (nc in 1:nchain) {b=c(b,res_mcmc[[nc]]$b[,2])}
+  for (nc in 1:nchain) {b=rbind(b,res_mcmc[[nc]]$b)}
   
   beta=c() # col=number of features, row=all samples of all chains
   for (nc in 1:nchain) {beta=rbind(beta,res_mcmc[[nc]]$beta[,-1,drop=F])}
@@ -81,6 +81,18 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
   FDRs=sapply(thetas,function(theta) { # B-FDRs
     sum((pip>theta)*(1-pip))/sum(pip>theta)
   })
+  
+  # recalculate a point-estiate of the probability of primary instances 
+  # to avoid the negative impact of randomness in MCMC sampling
+  # this still is not ideal
+  # good enough to use it as a "score" to indicate primary instance
+  # but cannot interpret it as a probability (as it should be)
+  
+  pip_recal=c()
+  b0=mean(b[,1])
+  b1=mean(b[,2])
+  for (i in 1:length(pos_sender))
+    {pip_recal=c(pip_recal,pnorm(b0+pos_sender[[i]]*b1))}
   
   # (1) pip is the probabilities of the sender cells being truly responsible for the
   # receiving cells' phenotypes
@@ -90,5 +102,6 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
   # in the sender cells
   # (4) FDRs are the Bayes FDRs calculated according to the theta
   # cutoffs given by the users (for defining primary instances)
-  return(list(pip=pip,b=b,beta=beta,FDRs=FDRs))
+  # (5) recalculated pip
+  return(list(pip=pip,b=b,beta=beta,FDRs=FDRs,pip_recal=pip_recal))
 }
