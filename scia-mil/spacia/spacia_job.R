@@ -6,7 +6,7 @@ library(Rcpp)
 library(rjson)
 # Debug data
 # setwd('E:/projects/cell2cell_inter/simulation/')
-# spacia_path = '../code/scia-mil/spacia/'
+# spacia_path = '../code/spacia/'
 # sender_exp_mtx = 'exp_sender.csv'
 # dist_mtx_r2s = 'dist_r2s.csv'
 # receivers_mtx = 'exp_receiver.csv'

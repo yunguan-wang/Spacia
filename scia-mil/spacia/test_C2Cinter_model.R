@@ -4,7 +4,7 @@
 Sys.setenv(LIBRARY_PATH = "/cm/shared/apps/intel/compilers_and_libraries/2017.6.256/linux/mkl/lib/intel64:/cm/shared/apps/java/oracle/jdk1.7.0_51/lib:/cm/shared/apps/intel/compilers_and_libraries/2017.6.256/linux/compiler/lib/intel64:/cm/shared/apps/intel/compilers_and_libraries/2017.6.256/linux/mpi/intel64/lib:/cm/shared/apps/openmpi/gcc/64/2.1.5/lib64:/cm/shared/apps/gcc/5.4.0/lib:/cm/shared/apps/gcc/5.4.0/lib64:/cm/shared/apps/slurm/16.05.8/lib64/slurm:/cm/shared/apps/slurm/16.05.8/lib64")
 
 ########  tuning parameters of the simulation  ###########
-
+set.seed(0)
 # number of receiver cells
 numbers_receiver=1000
 
@@ -83,8 +83,8 @@ thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
 # run MIL
 source('MIL_wrapper.R')
-
 Sys.time()
+set.seed(1)
 results=MIL_C2Cinter(exp_receiver,pos_sender,exp_sender,
   ntotal,nwarm,nthin,nchain,thetas)
 Sys.time()
@@ -107,3 +107,11 @@ vioplot(results$pip[pip==F],results$pip[pip==T])
 results$FDRs
 plot(thetas,results$FDRs)
 
+# evaluate randomness
+for (i in 1:10) {
+  set.seed(i)
+  results=MIL_C2Cinter(exp_receiver,pos_sender,exp_sender,
+                       ntotal,nwarm,nthin,nchain,thetas)
+  print(i)
+  print(colMeans(results$beta)[1:10])
+}
