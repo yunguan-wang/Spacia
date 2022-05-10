@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
 from collections import defaultdict
 import json
+import os
 
 def simulate_grid(grid_size, num_dots, spacing=15):
     locations = np.random.uniform(0, grid_size, size=(1,2))
@@ -136,6 +137,7 @@ while (np.abs(primary_beta) < 10).any():
 trivial_beta = np.random.normal(0 ,1, 40)
 betas = np.append(primary_beta, trivial_beta)
 
+# simulate receiver expression
 exp_receiver = np.zeros(shape=(len(receivers), 1))
 first = []
 second = []
@@ -184,25 +186,45 @@ pd.DataFrame(
     index=None)
 
 pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
-
 #%%
-_ = plt.figure(figsize=(8,8))
-sns.scatterplot(x = locations[:,0], y = locations[:,1], color='gray')
-sns.scatterplot(x = locations[senders,0], y = locations[senders,1], color = 'r')
-sns.scatterplot(x = locations[receivers,0], y = locations[receivers,1], color = 'g')
+# Run 
+#%%
+# _ = plt.figure(figsize=(8,8))
+# sns.scatterplot(x = locations[:,0], y = locations[:,1], color='gray')
+# sns.scatterplot(x = locations[senders,0], y = locations[senders,1], color = 'r')
+# sns.scatterplot(x = locations[receivers,0], y = locations[receivers,1], color = 'g')
 
-_ = plt.figure(figsize=(8,8))
-pip_n = [len(x) for x in pip]
-total_ip_n = [len(x) for x in total_ip]
-plt.hist(pip_n, label = 'Pip')
-plt.hist(total_ip_n, label = 'Total_ip', alpha=0.5)
-plt.legend()
-plot_pip(pip, receivers, locations)
+# _ = plt.figure(figsize=(8,8))
+# pip_n = [len(x) for x in pip]
+# total_ip_n = [len(x) for x in total_ip]
+# plt.hist(pip_n, label = 'Pip')
+# plt.hist(total_ip_n, label = 'Total_ip', alpha=0.5)
+# plt.legend()
+# plot_pip(pip, receivers, locations)
 
-_ = plt.figure(figsize=(8,8))
-plt.hist(first, label = 'primary beta')
-plt.hist(second, label = 'secondary beta')
-plt.legend()
+# _ = plt.figure(figsize=(8,8))
+# plt.hist(first, label = 'primary beta')
+# plt.hist(second, label = 'secondary beta')
+# plt.legend()
 # %%
-pip.shape
+simulation_folder = output_path
+job_id = ''
+b = pd.read_csv(os.path.join(output_path, job_id + '_b.txt'), sep='\t')
+beta = pd.read_csv(os.path.join(output_path, job_id + '_beta.txt'), sep='\t')
+fdr = pd.read_csv(os.path.join(output_path, job_id + '_FDRs.txt'), sep='\t')
+pip_res = pd.read_csv(os.path.join(output_path, job_id + '_pip.txt'), sep='\t')
+# pip_res = pd.read_csv(os.path.join(output_path, job_id + '_pip_res.txt'), sep='\t')
+# %%
+pi_vector = []
+for i, s in enumerate(total_ip):
+    pi_vector += [True if x in pip[i] else False for x in total_ip[i]]
+# %%
+pip_res['Primary_instance'] = pi_vector
+pip_res = pip_res.melt(
+    value_vars = pip_res.columns[:4], id_vars='Primary_instance', 
+    value_name = 'Pi_score', var_name = 'Chain')
+# %%
+sns.violinplot(data = pip_res, x = 'Primary_instance', y = 'Pi_score', hue='Chain')
+# %%
+sns.dis(data = pip_res, x = 'Primary_instance', y = 'pip_recal')
 # %%

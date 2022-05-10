@@ -5,21 +5,21 @@
 library(Rcpp)
 library(rjson)
 # Debug data
-setwd('E:/projects/cell2cell_inter/simulation/')
-spacia_path = '../code/scia-mil/spacia/'
-sender_exp_mtx = 'exp_sender.csv'
-dist_mtx_r2s = 'dist_r2s.csv'
-receivers_mtx = 'exp_receiver.csv'
-exp_sender = 'exp_sender.json'
-dist_sender = 'exp_dist.json'
-beta = 'betas.csv'
-ntotal=8000
-nwarm=4000
-nthin=10
-nchain=4
-thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
-output_path = ''
-job_id = ''
+# setwd('E:/projects/cell2cell_inter/simulation/')
+# spacia_path = '../code/scia-mil/spacia/'
+# sender_exp_mtx = 'exp_sender.csv'
+# dist_mtx_r2s = 'dist_r2s.csv'
+# receivers_mtx = 'exp_receiver.csv'
+# exp_sender = 'exp_sender.json'
+# dist_sender = 'exp_dist.json'
+# beta = 'betas.csv'
+# ntotal=8000
+# nwarm=4000
+# nthin=10
+# nchain=4
+# thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
+# output_path = ''
+# job_id = ''
 
 # Dummy test data
 # exp_receiver=c(1,1,0,0)
@@ -50,21 +50,22 @@ job_id = ''
 
 ######## Setting up ########
 
-# args = commandArgs(trailingOnly=TRUE)
-# spacia_path = args[1]
-# sender_exp_mtx = args[2]
-# dist_mtx_r2s = args[3]
-# receivers_mtx = args[4]
-# job_id = args[5]
-# ntotal = as.integer(args[6])
-# nwarm= as.integer(args[7])
-# nthin= as.integer(args[8])
-# nchain= as.integer(args[9])
-# output_path = args[10] # output path need to have '/' at the end
-# thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
-# 
-# # redirect logs
-# sink(file = paste(output_path, job_id, '_log.txt', sep=''))
+args = commandArgs(trailingOnly=TRUE)
+spacia_path = args[1]
+exp_sender = args[2]
+dist_receiver_sender = args[3]
+receivers_mtx = args[4]
+job_id = args[5]
+ntotal = as.integer(args[6])
+nwarm= as.integer(args[7])
+nthin= as.integer(args[8])
+nchain= as.integer(args[9])
+output_path = args[10] # output path need to have '/' at the end
+thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
+
+
+# redirect logs
+sink(file = paste(output_path, job_id, '_log.txt', sep=''))
 #########  source codes  #################
 sourceCpp(paste(spacia_path,"Fun_MICProB_C2Cinter.cpp", sep=''))
 source(paste(spacia_path,'MICProB_MIL_C2Cinter.R', sep=''))
@@ -106,14 +107,19 @@ receivers_mtx = read.csv(
     receivers_mtx, header=F, row.names = NULL, stringsAsFactors = F)$V1
 exp_receiver = receivers_mtx == 1
 # Read sender expression 
-json_exp_sender = fromJSON(file=exp_sender)
+exp_sender = fromJSON(file=exp_sender)
 exp_sender = sapply(json_exp_sender, function (x) do.call(rbind, x))
-# Read true beta
-beta = read.csv(
-    beta, header=F, row.names = NULL, stringsAsFactors = F)$V1
+# # Read true beta
+# beta = read.csv(
+#     beta, header=F, row.names = NULL, stringsAsFactors = F)$V1
 # Read sender distance to receivers
-dist_receiver_sender = fromJSON(file=dist_sender)
+dist_receiver_sender = fromJSON(file=dist_receiver_sender)
+# Normalize distance with the maximal distance
+max_dist = max(sapply(dist_receiver_sender, function(x) x[which.max(abs(x))]))
 dist_receiver_sender = sapply(dist_receiver_sender, function(x) x / max_dist)
+
+# Run the model 
+set.seed(0)
 res = MIL_C2Cinter(
   exp_receiver, dist_receiver_sender, exp_sender, 
   ntotal, nwarm, nthin, nchain, thetas)
@@ -133,10 +139,9 @@ for (n in names(res)) {
 
 # Debug purpose tests
 # need to see a high positive correlation here
-plot(beta,colMeans(res$beta))
-cor(beta,colMeans(res$beta))
+# plot(beta,colMeans(res$beta))
+# cor(beta,colMeans(res$beta))
+# 
+# plot(beta[1:10],colMeans(res$beta)[1:10])
+# cor(beta[1:10],colMeans(res$beta)[1:10])
 
-plot(beta[1:10],colMeans(res$beta)[1:10])
-cor(beta[1:10],colMeans(results$beta)[1:10])
-
-plot(1:1604, res$beta[,2], type='l')
