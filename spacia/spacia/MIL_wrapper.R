@@ -76,11 +76,26 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
   for (nc in 1:nchain) {b=rbind(b,res_mcmc[[nc]]$b)}
   
   beta=c() # col=number of features, row=all samples of all chains
-  for (nc in 1:nchain) {beta=rbind(beta,res_mcmc[[nc]]$beta[,-1,drop=F])}
+  beta_mean=beta_var=c()
+  for (nc in 1:nchain) 
+  {
+    tmp=res_mcmc[[nc]]$beta[,-1,drop=F]
+    beta=rbind(beta,tmp)
+    beta_mean=rbind(beta_mean,colMeans(tmp))
+    beta_var=rbind(beta_var,apply(tmp,2,var))
+  }
   
   FDRs=sapply(thetas,function(theta) { # B-FDRs
     sum((pip>theta)*(1-pip))/sum(pip>theta)
   })
+  
+  # PSRF
+  N=dim(res_mcmc[[1]]$beta)[1]
+  M=nchain
+  B=N/(M-1)*rowSums((t(beta_mean)-colMeans(beta_mean))^2)
+  W=colMeans(beta_var)
+  V_hat=(N-1)/N*W+(M+1)/M/N*B
+  PSRF=V_hat/W
   
   # recalculate a point-estiate of the probability of primary instances 
   # to avoid the negative impact of randomness in MCMC sampling
@@ -103,5 +118,7 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
   # (4) FDRs are the Bayes FDRs calculated according to the theta
   # cutoffs given by the users (for defining primary instances)
   # (5) recalculated pip
-  return(list(pip=pip,b=b,beta=beta,FDRs=FDRs,pip_recal=pip_recal))
+  # (6) PSRF of beta
+  return(list(pip=pip,b=b,beta=beta,FDRs=FDRs,pip_recal=pip_recal,
+              PSRF=PSRF))
 }

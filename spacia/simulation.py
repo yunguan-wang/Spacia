@@ -104,7 +104,7 @@ def simulate_senders_receivers(
     return senders, receivers
 
 np.random.seed(0)
-output_path = '/project/shared/xiao_wang/projects/cell2cell_inter/simulation'
+output_path = '/project/shared/xiao_wang/projects/cell2cell_inter/code/data/simulation'
 grid_size = 2000
 num_dots = 8000
 dist_cutoff = 50
@@ -186,6 +186,18 @@ pd.DataFrame(
     index=None)
 
 pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
+
+metadata = pd.DataFrame(locations, columns=['X','Y'])
+metadata['Celltype'] = 'Others'
+metadata.iloc[receivers, 2] = 'Receivers'
+metadata.iloc[senders, 2] = 'Senders'
+metadata['Sender_cells'] = ''
+metadata.iloc[receivers,3] = [
+    ','.join([str(i) for i in x]) for x in total_ip]
+metadata['Sender_cells_PI'] = ''
+metadata.iloc[receivers,4] = [
+    ','.join([str(i) for i in x]) for x in pip]
+metadata.to_csv(output_path + '/simulation_metadata.csv')
 #%%
 # Run 
 #%%
