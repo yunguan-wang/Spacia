@@ -177,7 +177,7 @@ dist_r2s = cdist(locations[receivers], locations[senders])
 dist_r2s = pd.DataFrame(dist_r2s, columns = senders)
 for i, row in dist_r2s.iterrows():
     sender_dist_dict['r' + str(i+1)] = row.loc[total_ip[i]].tolist()
-with open(output_path + '/exp_dist.json', 'w') as fp:
+with open(output_path + '/dist_sender.json', 'w') as fp:
     json.dump(sender_dist_dict, fp)
 
 pd.DataFrame(
