@@ -197,7 +197,7 @@ metadata.iloc[receivers,3] = [
 metadata['Sender_cells_PI'] = ''
 metadata.iloc[receivers,4] = [
     ','.join([str(i) for i in x]) for x in pip]
-metadata.to_csv(output_path + '/simulation_metadata.csv')
+metadata.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
 #%%
 # Run 
 #%%
