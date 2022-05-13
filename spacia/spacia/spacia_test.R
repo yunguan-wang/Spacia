@@ -5,18 +5,19 @@
 library(Rcpp)
 library(rjson)
 # Debug data
-# setwd('E:/projects/cell2cell_inter/code/data/simulation/')
-# spacia_path = './spacia/'
-# exp_receiver = 'exp_receiver.csv'
-# exp_sender = 'exp_sender.json'
-# dist_sender = 'dist_sender.json'
-# ntotal=8000
-# nwarm=4000
-# nthin=10
-# nchain=4
-# thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
-# output_path = ''
-# job_id = ''
+setwd('E:/projects/cell2cell_inter/code/data/simulation/')
+spacia_path = './spacia/'
+receivers_mtx = 'exp_receiver.csv'
+exp_sender = 'exp_sender.json'
+dist_sender = 'dist_sender.json'
+beta = 'betas.csv'
+ntotal=80000
+nwarm=20000
+nthin=10
+nchain=5
+thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
+output_path = ''
+job_id = ''
 
 # Dummy test data
 # exp_receiver=c(1,1,0,0)
@@ -47,18 +48,18 @@ library(rjson)
 
 ######## Setting up ########
 
-args = commandArgs(trailingOnly=TRUE)
-spacia_path = args[1]
-exp_sender = args[2]
-dist_receiver_sender = args[3]
-receivers_mtx = args[4]
-job_id = args[5]
-ntotal = as.integer(args[6])
-nwarm= as.integer(args[7])
-nthin= as.integer(args[8])
-nchain= as.integer(args[9])
-output_path = args[10] # output path need to have '/' at the end
-thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
+# args = commandArgs(trailingOnly=TRUE)
+# spacia_path = args[1]
+# exp_sender = args[2]
+# dist_sender = args[3]
+# receivers_mtx = args[4]
+# job_id = args[5]
+# ntotal = as.integer(args[6])
+# nwarm= as.integer(args[7])
+# nthin= as.integer(args[8])
+# nchain= as.integer(args[9])
+# output_path = args[10] # output path need to have '/' at the end
+# thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
 
 # redirect logs
@@ -69,16 +70,46 @@ source(paste(spacia_path,'MICProB_MIL_C2Cinter.R', sep=''))
 source(paste(spacia_path,'MIL_wrapper.R', sep=''))
 
 ######## format input into proper formats ########
+# sender_exp_mtx = read.csv(
+#   sender_exp_mtx, row.names = 1, header=T, stringsAsFactors = F)
+# dist_mtx_r2s = read.csv(
+#   dist_mtx_r2s, header=T, row.names = 1, check.names = F,stringsAsFactors = F)
+# receivers_mtx = read.csv(
+#   receivers_mtx, header=T, row.names = 1, stringsAsFactors = F)
+# beta = read.csv(
+#     beta, header=F, row.names = NULL, stringsAsFactors = F)
+# 
+# # Construct the receiver vector
+# exp_receiver = receivers_mtx$exp_receiver == 1
+# 
+# # construct the sender positions
+# job_receiver_list = as.list(receivers_mtx)$senders
+# dist_sender = sapply(
+#   1:dim(receivers_mtx)[1],
+#   function (i) unname(
+#     unlist(
+#       dist_mtx_r2s[i,strsplit(receivers_mtx[i,1],',')[[1]]])
+#   ))
+# max_dist = max(sapply(dist_sender, function(x) x[which.max(abs(x))]))
+# dist_sender = sapply(dist_sender, function(x) x / max_dist)
+# # construct the sender expression
+# exp_sender = lapply(
+#   job_receiver_list,
+#   function (x) unname(
+#     data.matrix((sender_exp_mtx[strsplit(x,',')[[1]],]), rownames.force = F))
+#     )
+# 
 
 # Read receiver matrix
 receivers_mtx = read.csv(
     receivers_mtx, header=F, row.names = NULL, stringsAsFactors = F)$V1
 exp_receiver = receivers_mtx == 1
-
 # Read sender expression 
 exp_sender = fromJSON(file=exp_sender)
 exp_sender = sapply(exp_sender, function (x) do.call(rbind, x))
-
+# # Read true beta
+# beta = read.csv(
+#     beta, header=F, row.names = NULL, stringsAsFactors = F)$V1
 # Read sender distance to receivers
 dist_sender = fromJSON(file=dist_sender)
 # Normalize distance with the maximal distance
