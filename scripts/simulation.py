@@ -47,12 +47,12 @@ def simulate_pip(receivers, senders, locations, dist_cutoff = 30):
     return np.array(pip,dtype=object)
 
 def plot_pip(
-    s_list, r_list, metadata, figsize = (10,8),
+    s_list, r_list, meta_data, figsize = (10,8),
     bbox = None # (500, 800, 200) as X, Y for top left corner and side
     ):
     pip_all = np.unique([x for p in s_list for x in p])
     receivers_all = [r_list[i] for i in range(len(r_list)) if s_list[i].shape[0]>0]
-    plot_data = metadata.copy()
+    plot_data = meta_data.copy()
     plot_data['dot_size'] = 10
     plot_data.Celltype.replace(
         'Receivers','Out-of-range Receiver Cell Type', inplace = True)
@@ -127,7 +127,7 @@ def simulate_senders_receivers(
     return senders, receivers
 
 def write_simulation_files(
-    exp_sender, total_ip, receivers, senders, metadata, betas, output_path):
+    exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas, output_path):
     # Write out simulation files
     exp_sender_dict = dict()
     for i, s in enumerate(total_ip):
@@ -136,7 +136,7 @@ def write_simulation_files(
         json.dump(exp_sender_dict, fp)
 
     sender_dist_dict = dict()
-    dist_r2s = cdist(metadata.iloc[receivers, :2], metadata.iloc[senders, :2])
+    dist_r2s = cdist(meta_data.iloc[receivers, :2], meta_data.iloc[senders, :2])
     dist_r2s = pd.DataFrame(dist_r2s, columns = senders)
     for i, row in dist_r2s.iterrows():
         sender_dist_dict['r' + str(i+1)] = row.loc[total_ip[i]].tolist()
@@ -150,92 +150,67 @@ def write_simulation_files(
 
     pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
 
-    metadata['Sender_cells'] = ''
-    metadata.iloc[receivers,3] = [
+    meta_data['Sender_cells'] = ''
+    meta_data.iloc[receivers,3] = [
         ','.join([str(i) for i in x]) for x in total_ip]
-    metadata['Sender_cells_PI'] = ''
-    metadata.iloc[receivers,4] = [
+    meta_data['Sender_cells_PI'] = ''
+    meta_data.iloc[receivers,4] = [
         ','.join([str(i) for i in x]) for x in pip]
-    metadata.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
+    meta_data.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
+
+def simulate_all_data():
+    np.random.seed(0)
+    grid_size = 2000
+    num_dots = 8000
+    dist_cutoff = 50
+    locations = simulate_grid(grid_size, num_dots)
+    senders, receivers = simulate_senders_receivers(
+        centers = np.array(
+            [[292, 799],[894, 149],[855, 774],[611, 391],[297, 366]]
+            ) * 2,
+        radius_min = 150, radius_max = 300, ring_r = 200
+    )
+    meta_data = pd.DataFrame(locations, columns=['X','Y'])
+    meta_data['Celltype'] = 'Others'
+    meta_data.iloc[receivers, 2] = 'Receivers'
+    meta_data.iloc[senders, 2] = 'Senders'
+    pip = simulate_pip(receivers, senders, locations, dist_cutoff)
+    total_ip = simulate_pip(receivers, senders, locations, dist_cutoff*1.5)
+
+    length_checker = np.vectorize(len)
+    receivers = np.array(receivers)[length_checker(total_ip)>0]
+    pip = np.array(pip)[length_checker(total_ip)>0]
+    total_ip = np.array(total_ip)[length_checker(total_ip)>0]
+
+    # simulate sender expression with normaal distribution
+    # This also means in the real application, the pathways/gene expression need to be
+    # z-scored
+    exp_sender = pd.DataFrame(
+        np.random.normal(size=[len(senders), 50]), index = senders)
+
+    # simulate betas
+    primary_beta = np.random.normal(0, 1, size=10) * 10
+    while (np.abs(primary_beta) < 10).any():
+        primary_beta = [2*x if abs(x)<10 else x for x in primary_beta]
+    trivial_beta = np.random.normal(0 ,1, 40)
+    betas = np.append(primary_beta, trivial_beta)
+
+    # simulate receiver expression
+    exp_receiver = np.zeros(shape=(len(receivers), 1))
+    for i in range(len(receivers)):
+        i_senders = pip[i]
+        exp_receiver[i] = np.matmul(exp_sender.loc[i_senders], betas).sum() + np.random.normal(-0.2, 0.1)
+    exp_receiver = (exp_receiver > 0) + 0
+    return exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas
 #%%
-np.random.seed(0)
 spacia_path = '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/spacia'
 output_path = spacia_path.replace('spacia', 'data/simulation/base')
 if not os.path.exists(output_path):
     os.makedirs(output_path)
-grid_size = 2000
-num_dots = 8000
-dist_cutoff = 50
-locations = simulate_grid(grid_size, num_dots)
-senders, receivers = simulate_senders_receivers(
-    centers = np.array(
-        [[292, 799],[894, 149],[855, 774],[611, 391],[297, 366]]
-        ) * 2,
-    radius_min = 150, radius_max = 300, ring_r = 200
-)
-metadata = pd.DataFrame(locations, columns=['X','Y'])
-metadata['Celltype'] = 'Others'
-metadata.iloc[receivers, 2] = 'Receivers'
-metadata.iloc[senders, 2] = 'Senders'
-pip = simulate_pip(receivers, senders, locations, dist_cutoff)
-total_ip = simulate_pip(receivers, senders, locations, dist_cutoff*1.5)
-
-length_checker = np.vectorize(len)
-receivers = np.array(receivers)[length_checker(total_ip)>0]
-pip = np.array(pip)[length_checker(total_ip)>0]
-total_ip = np.array(total_ip)[length_checker(total_ip)>0]
-
-# simulate sender expression with normaal distribution
-# This also means in the real application, the pathways/gene expression need to be
-# z-scored
-sender_names = ['s' + str(x) for x in senders]
-exp_sender = pd.DataFrame(
-    np.random.normal(size=[len(senders), 50]), index = senders)
-
-# simulate betas
-primary_beta = np.random.normal(0, 1, size=10) * 10
-while (np.abs(primary_beta) < 10).any():
-    primary_beta = [2*x if abs(x)<10 else x for x in primary_beta]
-trivial_beta = np.random.normal(0 ,1, 40)
-betas = np.append(primary_beta, trivial_beta)
-
-# simulate receiver expression
-exp_receiver = np.zeros(shape=(len(receivers), 1))
-for i in range(len(receivers)):
-    i_senders = pip[i]
-    exp_receiver[i] = np.matmul(exp_sender.loc[i_senders], betas).sum() + np.random.normal(-0.2, 0.1)
-exp_receiver = (exp_receiver > 0) + 0
-
+exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas = simulate_all_data()
 # Write out simulation files
-exp_sender_dict = dict()
-for i, s in enumerate(total_ip):
-    exp_sender_dict['r' + str(i+1)] = exp_sender.loc[s].values.tolist()
-with open(output_path + '/exp_sender.json', 'w') as fp:
-    json.dump(exp_sender_dict, fp)
-
-sender_dist_dict = dict()
-dist_r2s = cdist(locations[receivers], locations[senders])
-dist_r2s = pd.DataFrame(dist_r2s, columns = senders)
-for i, row in dist_r2s.iterrows():
-    sender_dist_dict['r' + str(i+1)] = row.loc[total_ip[i]].tolist()
-with open(output_path + '/dist_sender.json', 'w') as fp:
-    json.dump(sender_dist_dict, fp)
-
-pd.DataFrame(
-    exp_receiver).to_csv(output_path + '/exp_receiver.csv', 
-    header=None, 
-    index=None)
-
-pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
-
-metadata['Sender_cells'] = ''
-metadata.iloc[receivers,3] = [
-    ','.join([str(i) for i in x]) for x in total_ip]
-metadata['Sender_cells_PI'] = ''
-metadata.iloc[receivers,4] = [
-    ','.join([str(i) for i in x]) for x in pip]
-metadata.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
-
+write_simulation_files(
+    exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas, output_path)
 
 # %%
 # 一个是viaration of simulated data。这个你弄起来容易。
