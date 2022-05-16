@@ -46,40 +46,63 @@ def simulate_pip(receivers, senders, locations, dist_cutoff = 30):
         pip.append(senders[crit])
     return np.array(pip,dtype=object)
 
-def plot_pip(pip, receivers, locations):
-    pip_all = np.unique([x for p in pip for x in p])
-    receivers_all = [receivers[i] for i in range(len(receivers)) if pip[i].shape[0]>0]
-    _ = plt.figure(figsize=(8,8))
+def plot_pip(
+    s_list, r_list, metadata, figsize = (10,8),
+    bbox = None # (500, 800, 200) as X, Y for top left corner and side
+    ):
+    pip_all = np.unique([x for p in s_list for x in p])
+    receivers_all = [r_list[i] for i in range(len(r_list)) if s_list[i].shape[0]>0]
+    plot_data = metadata.copy()
+    plot_data['dot_size'] = 10
+    plot_data.Celltype.replace(
+        'Receivers','Out-of-range Receiver Cell Type', inplace = True)
+    plot_data.Celltype.replace(
+        'Senders','Out-of-range Sender Cell Type', inplace = True)
+    plot_data.iloc[pip_all,2] = 'Sender Cell'
+    plot_data.iloc[receivers_all,2] = 'Receiver Cell'
+    plot_data.iloc[pip_all,5] = 20
+    plot_data.iloc[receivers_all,5] = 20
+    if bbox is not None:
+        X_min, Y_min, delta = bbox
+        mask = (plot_data.X >= X_min) & (plot_data.X <= X_min + delta)
+        mask = mask & (plot_data.Y >= Y_min) & (plot_data.Y <= Y_min + delta)
+        plot_data = plot_data[mask]
+        receivers_mask = [
+            True if x in plot_data.index else False for x in r_list]
+        r_list = np.array(r_list)[receivers_mask]
+        s_list = np.array(s_list)[receivers_mask]
+        plot_data.dot_size = plot_data.dot_size * 10
+
+    _ = plt.figure(figsize=figsize)
     sns.scatterplot(
-        x = locations[:,0], y = locations[:,1], color='gray', s=10,
-        label = 'Others')
-    sns.scatterplot(
-        x = locations[receivers,0], y = locations[receivers,1], 
-        color = 'g', s = 10, label = 'Out-of-range Receivers')
-    sns.scatterplot(
-        x = locations[receivers_all,0], y = locations[receivers_all,1], 
-        color = 'g', s = 25, label = 'Receivers')
-    sns.scatterplot(
-        x = locations[senders,0], y = locations[senders,1], 
-        color = 'r', s = 10, label = 'Non-PIP')
-    sns.scatterplot(
-        x = locations[pip_all,0], y = locations[pip_all,1], color = 'r', s=50,
-        label = 'PIP')
+        data = plot_data, x = 'X', y = 'Y', hue='Celltype', linewidth=0,
+        size = 'dot_size',
+        hue_order = [
+            'Others', 'Out-of-range Receiver Cell Type', 'Receiver Cell',
+       'Out-of-range Sender Cell Type', 'Sender Cell'],
+       palette = ['grey', 'g', 'g', 'r', 'r']
+       )
     plt.legend(bbox_to_anchor = (1,0.5), loc = 'center left')
-    for i in range(len(receivers)):
-        if len(pip[i]) == 0:
+
+    for i in range(len(r_list)):
+        if len(s_list[i]) == 0:
             continue
         else:
-            r = receivers[i]
-            p = pip[i]
+            r = r_list[i]
+            p = s_list[i]
             for indiv_p in p:
-                start = locations[indiv_p]
-                end = locations[r]
+                try:
+                    start = plot_data.loc[indiv_p,:'Y']
+                    end = plot_data.loc[r,:'Y']
+                except KeyError:
+                    continue
                 dx, dy = end-start
                 plt.arrow(
                     *start, dx, dy,
-                    head_width = 10,
-                    length_includes_head=True)
+                    head_width = 5,
+                    length_includes_head=True, 
+                    edgecolor=None,
+                    color = 'k')
 
 def simulate_senders_receivers(
     centers = np.array([[292, 799],[894, 149],[855, 774],[611, 391],[297, 366]]),
@@ -103,8 +126,43 @@ def simulate_senders_receivers(
     receivers = list(set(receivers))
     return senders, receivers
 
+def write_simulation_files(
+    exp_sender, total_ip, receivers, senders, metadata, betas, output_path):
+    # Write out simulation files
+    exp_sender_dict = dict()
+    for i, s in enumerate(total_ip):
+        exp_sender_dict['r' + str(i+1)] = exp_sender.loc[s].values.tolist()
+    with open(output_path + '/exp_sender.json', 'w') as fp:
+        json.dump(exp_sender_dict, fp)
+
+    sender_dist_dict = dict()
+    dist_r2s = cdist(metadata.iloc[receivers, :2], metadata.iloc[senders, :2])
+    dist_r2s = pd.DataFrame(dist_r2s, columns = senders)
+    for i, row in dist_r2s.iterrows():
+        sender_dist_dict['r' + str(i+1)] = row.loc[total_ip[i]].tolist()
+    with open(output_path + '/dist_sender.json', 'w') as fp:
+        json.dump(sender_dist_dict, fp)
+
+    pd.DataFrame(
+        exp_receiver).to_csv(output_path + '/exp_receiver.csv', 
+        header=None, 
+        index=None)
+
+    pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
+
+    metadata['Sender_cells'] = ''
+    metadata.iloc[receivers,3] = [
+        ','.join([str(i) for i in x]) for x in total_ip]
+    metadata['Sender_cells_PI'] = ''
+    metadata.iloc[receivers,4] = [
+        ','.join([str(i) for i in x]) for x in pip]
+    metadata.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
+#%%
 np.random.seed(0)
-output_path = '/project/shared/xiao_wang/projects/cell2cell_inter/code/data/simulation'
+spacia_path = '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/spacia'
+output_path = spacia_path.replace('spacia', 'data/simulation/base')
+if not os.path.exists(output_path):
+    os.makedirs(output_path)
 grid_size = 2000
 num_dots = 8000
 dist_cutoff = 50
@@ -113,8 +171,12 @@ senders, receivers = simulate_senders_receivers(
     centers = np.array(
         [[292, 799],[894, 149],[855, 774],[611, 391],[297, 366]]
         ) * 2,
-    radius_min = 150, radius_max = 300, ring_r = 100
+    radius_min = 150, radius_max = 300, ring_r = 200
 )
+metadata = pd.DataFrame(locations, columns=['X','Y'])
+metadata['Celltype'] = 'Others'
+metadata.iloc[receivers, 2] = 'Receivers'
+metadata.iloc[senders, 2] = 'Senders'
 pip = simulate_pip(receivers, senders, locations, dist_cutoff)
 total_ip = simulate_pip(receivers, senders, locations, dist_cutoff*1.5)
 
@@ -139,33 +201,12 @@ betas = np.append(primary_beta, trivial_beta)
 
 # simulate receiver expression
 exp_receiver = np.zeros(shape=(len(receivers), 1))
-first = []
-second = []
 for i in range(len(receivers)):
     i_senders = pip[i]
-    first.append(np.matmul(exp_sender.loc[i_senders], betas).sum())
-    second.append(np.random.normal(-0.2, 0.1))
     exp_receiver[i] = np.matmul(exp_sender.loc[i_senders], betas).sum() + np.random.normal(-0.2, 0.1)
 exp_receiver = (exp_receiver > 0) + 0
 
-# # construct distance matrix
-# dist_r2s = cdist(locations[receivers], locations[senders])
-# dist_r2s = pd.DataFrame(dist_r2s, columns = sender_names)
-# dist_r2s.to_csv(output_path + '/dist_r2s.csv')
-
-# # construct sender exp matrix
-# exp_sender.index = sender_names
-# exp_sender.to_csv(output_path + '/exp_sender.csv')
-
-# # construct receiver exp matrix
-# receiver_df = pd.DataFrame(total_ip.copy(), columns = ['senders'])
-# receiver_df.senders = receiver_df.senders.apply(
-#     lambda x: ','.join(['s' + str(i) for i in x])
-#     )
-# receiver_df['exp_receiver'] = exp_receiver
-# receiver_df.to_csv(output_path + '/exp_receiver.csv')
-# pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
-
+# Write out simulation files
 exp_sender_dict = dict()
 for i, s in enumerate(total_ip):
     exp_sender_dict['r' + str(i+1)] = exp_sender.loc[s].values.tolist()
@@ -187,10 +228,6 @@ pd.DataFrame(
 
 pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
 
-metadata = pd.DataFrame(locations, columns=['X','Y'])
-metadata['Celltype'] = 'Others'
-metadata.iloc[receivers, 2] = 'Receivers'
-metadata.iloc[senders, 2] = 'Senders'
 metadata['Sender_cells'] = ''
 metadata.iloc[receivers,3] = [
     ','.join([str(i) for i in x]) for x in total_ip]
@@ -198,45 +235,8 @@ metadata['Sender_cells_PI'] = ''
 metadata.iloc[receivers,4] = [
     ','.join([str(i) for i in x]) for x in pip]
 metadata.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
-#%%
-# Run 
-#%%
-# _ = plt.figure(figsize=(8,8))
-# sns.scatterplot(x = locations[:,0], y = locations[:,1], color='gray')
-# sns.scatterplot(x = locations[senders,0], y = locations[senders,1], color = 'r')
-# sns.scatterplot(x = locations[receivers,0], y = locations[receivers,1], color = 'g')
 
-# _ = plt.figure(figsize=(8,8))
-# pip_n = [len(x) for x in pip]
-# total_ip_n = [len(x) for x in total_ip]
-# plt.hist(pip_n, label = 'Pip')
-# plt.hist(total_ip_n, label = 'Total_ip', alpha=0.5)
-# plt.legend()
-# plot_pip(pip, receivers, locations)
 
-# _ = plt.figure(figsize=(8,8))
-# plt.hist(first, label = 'primary beta')
-# plt.hist(second, label = 'secondary beta')
-# plt.legend()
 # %%
-simulation_folder = output_path
-job_id = ''
-b = pd.read_csv(os.path.join(output_path, job_id + '_b.txt'), sep='\t')
-beta = pd.read_csv(os.path.join(output_path, job_id + '_beta.txt'), sep='\t')
-fdr = pd.read_csv(os.path.join(output_path, job_id + '_FDRs.txt'), sep='\t')
-pip_res = pd.read_csv(os.path.join(output_path, job_id + '_pip.txt'), sep='\t')
-# pip_res = pd.read_csv(os.path.join(output_path, job_id + '_pip_res.txt'), sep='\t')
-# %%
-pi_vector = []
-for i, s in enumerate(total_ip):
-    pi_vector += [True if x in pip[i] else False for x in total_ip[i]]
-# %%
-pip_res['Primary_instance'] = pi_vector
-pip_res = pip_res.melt(
-    value_vars = pip_res.columns[:4], id_vars='Primary_instance', 
-    value_name = 'Pi_score', var_name = 'Chain')
-# %%
-sns.violinplot(data = pip_res, x = 'Primary_instance', y = 'Pi_score', hue='Chain')
-# %%
-sns.dis(data = pip_res, x = 'Primary_instance', y = 'pip_recal')
-# %%
+# 一个是viaration of simulated data。这个你弄起来容易。
+# 最好还有variation of model prior parameter distribution。你要是搞得定的话，你自己试试。不行的话，我教你。就是R code里面要tweak点东西。其实也没多难
