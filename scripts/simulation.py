@@ -7,6 +7,8 @@ from scipy.spatial.distance import cdist
 from collections import defaultdict
 import json
 import os
+import subprocess
+from multiprocessing import Pool
 
 def simulate_grid(grid_size, num_dots, spacing=15):
     locations = np.random.uniform(0, grid_size, size=(1,2))
@@ -46,65 +48,8 @@ def simulate_pip(receivers, senders, locations, dist_cutoff = 30):
         pip.append(senders[crit])
     return np.array(pip,dtype=object)
 
-def plot_pip(
-    s_list, r_list, meta_data, figsize = (10,8),
-    bbox = None # (500, 800, 200) as X, Y for top left corner and side
-    ):
-    pip_all = np.unique([x for p in s_list for x in p])
-    receivers_all = [r_list[i] for i in range(len(r_list)) if s_list[i].shape[0]>0]
-    plot_data = meta_data.copy()
-    plot_data['dot_size'] = 10
-    plot_data.Celltype.replace(
-        'Receivers','Out-of-range Receiver Cell Type', inplace = True)
-    plot_data.Celltype.replace(
-        'Senders','Out-of-range Sender Cell Type', inplace = True)
-    plot_data.iloc[pip_all,2] = 'Sender Cell'
-    plot_data.iloc[receivers_all,2] = 'Receiver Cell'
-    plot_data.iloc[pip_all,5] = 20
-    plot_data.iloc[receivers_all,5] = 20
-    if bbox is not None:
-        X_min, Y_min, delta = bbox
-        mask = (plot_data.X >= X_min) & (plot_data.X <= X_min + delta)
-        mask = mask & (plot_data.Y >= Y_min) & (plot_data.Y <= Y_min + delta)
-        plot_data = plot_data[mask]
-        receivers_mask = [
-            True if x in plot_data.index else False for x in r_list]
-        r_list = np.array(r_list)[receivers_mask]
-        s_list = np.array(s_list)[receivers_mask]
-        plot_data.dot_size = plot_data.dot_size * 10
-
-    _ = plt.figure(figsize=figsize)
-    sns.scatterplot(
-        data = plot_data, x = 'X', y = 'Y', hue='Celltype', linewidth=0,
-        size = 'dot_size',
-        hue_order = [
-            'Others', 'Out-of-range Receiver Cell Type', 'Receiver Cell',
-       'Out-of-range Sender Cell Type', 'Sender Cell'],
-       palette = ['grey', 'g', 'g', 'r', 'r']
-       )
-    plt.legend(bbox_to_anchor = (1,0.5), loc = 'center left')
-
-    for i in range(len(r_list)):
-        if len(s_list[i]) == 0:
-            continue
-        else:
-            r = r_list[i]
-            p = s_list[i]
-            for indiv_p in p:
-                try:
-                    start = plot_data.loc[indiv_p,:'Y']
-                    end = plot_data.loc[r,:'Y']
-                except KeyError:
-                    continue
-                dx, dy = end-start
-                plt.arrow(
-                    *start, dx, dy,
-                    head_width = 5,
-                    length_includes_head=True, 
-                    edgecolor=None,
-                    color = 'k')
-
 def simulate_senders_receivers(
+    num_dots, locations,
     centers = np.array([[292, 799],[894, 149],[855, 774],[611, 391],[297, 366]]),
     radius_min = 75, radius_max = 150, ring_r = 50):
     np.random.seed(0)
@@ -126,38 +71,6 @@ def simulate_senders_receivers(
     receivers = list(set(receivers))
     return senders, receivers
 
-def write_simulation_files(
-    exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas, output_path):
-    # Write out simulation files
-    exp_sender_dict = dict()
-    for i, s in enumerate(total_ip):
-        exp_sender_dict['r' + str(i+1)] = exp_sender.loc[s].values.tolist()
-    with open(output_path + '/exp_sender.json', 'w') as fp:
-        json.dump(exp_sender_dict, fp)
-
-    sender_dist_dict = dict()
-    dist_r2s = cdist(meta_data.iloc[receivers, :2], meta_data.iloc[senders, :2])
-    dist_r2s = pd.DataFrame(dist_r2s, columns = senders)
-    for i, row in dist_r2s.iterrows():
-        sender_dist_dict['r' + str(i+1)] = row.loc[total_ip[i]].tolist()
-    with open(output_path + '/dist_sender.json', 'w') as fp:
-        json.dump(sender_dist_dict, fp)
-
-    pd.DataFrame(
-        exp_receiver).to_csv(output_path + '/exp_receiver.csv', 
-        header=None, 
-        index=None)
-
-    pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
-
-    meta_data['Sender_cells'] = ''
-    meta_data.iloc[receivers,3] = [
-        ','.join([str(i) for i in x]) for x in total_ip]
-    meta_data['Sender_cells_PI'] = ''
-    meta_data.iloc[receivers,4] = [
-        ','.join([str(i) for i in x]) for x in pip]
-    meta_data.to_csv(output_path + '/simulation_metadata.txt', sep='\t')
-
 def simulate_all_data():
     np.random.seed(0)
     grid_size = 2000
@@ -165,6 +78,7 @@ def simulate_all_data():
     dist_cutoff = 50
     locations = simulate_grid(grid_size, num_dots)
     senders, receivers = simulate_senders_receivers(
+        num_dots, locations,
         centers = np.array(
             [[292, 799],[894, 149],[855, 774],[611, 391],[297, 366]]
             ) * 2,
@@ -201,17 +115,104 @@ def simulate_all_data():
         i_senders = pip[i]
         exp_receiver[i] = np.matmul(exp_sender.loc[i_senders], betas).sum() + np.random.normal(-0.2, 0.1)
     exp_receiver = (exp_receiver > 0) + 0
-    return exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas
+    return exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas
+
+def write_simulation_files(
+    exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas, 
+    log_info, output_path):
+    # Write out simulation files
+    # exp sender 
+    exp_sender_fn = output_path + '/exp_sender.json'
+    exp_sender_dict = dict()
+    for i, s in enumerate(total_ip):
+        exp_sender_dict['r' + str(i+1)] = exp_sender.loc[s].values.tolist()
+    with open(exp_sender_fn, 'w') as fp:
+        json.dump(exp_sender_dict, fp)
+
+    # dist_sender
+    dist_sender_fn = output_path + '/dist_sender.json'
+    sender_dist_dict = dict()
+    dist_r2s = cdist(meta_data.iloc[receivers, :2], meta_data.iloc[senders, :2])
+    dist_r2s = pd.DataFrame(dist_r2s, columns = senders)
+    for i, row in dist_r2s.iterrows():
+        sender_dist_dict['r' + str(i+1)] = row.loc[total_ip[i]].tolist()
+    with open(dist_sender_fn, 'w') as fp:
+        json.dump(sender_dist_dict, fp)
+
+    # exp receiver
+    exp_receiver_fn = output_path + '/exp_receiver.csv'
+    pd.DataFrame(
+        exp_receiver).to_csv(exp_receiver_fn, 
+        header=None, 
+        index=None)
+
+    pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
+
+    # metadata 
+    meta_data_fn = output_path + '/simulation_metadata.txt'
+    meta_data['Sender_cells'] = ''
+    meta_data.iloc[receivers,3] = [
+        ','.join([str(i) for i in x]) for x in total_ip]
+    meta_data['Sender_cells_PI'] = ''
+    meta_data.iloc[receivers,4] = [
+        ','.join([str(i) for i in x]) for x in pip]
+    meta_data.to_csv(meta_data_fn, sep='\t')
+
+    # write log
+    with open(output_path + '/log.txt', 'w') as f:
+        f.write(log_info)
+    return exp_sender_fn, dist_sender_fn, exp_receiver_fn, meta_data_fn
+
+def simulation_worker(cmd):
+    # A simple wrapper for running denoise jobs.
+    log_fn = cmd[-1]
+    cmd = cmd[:-1]
+    print(cmd)
+    with open(log_fn, "a") as outfile:
+        subprocess.run(cmd, stdout=outfile, stderr=outfile)
+    # os.system('rm -r output_fn') # Get rid of output.
+    return
 #%%
 spacia_path = '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/spacia'
 output_path = spacia_path.replace('spacia', 'data/simulation/base')
+
+#! Make sure the log info is accurate!!!
+log_info = 'Base 10 true beta, 40 trivial beta, roughly 10X difference in scale.'
+log_info = '\n'.join([
+    log_info,
+    '2000 x 2000 grid of cells, 5 blobs.',
+    'True sender distance cutoff: 50.',
+    'Sender exp = Normal expression ',
+]
+) 
 if not os.path.exists(output_path):
     os.makedirs(output_path)
-exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas = simulate_all_data()
+exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas = simulate_all_data()
 # Write out simulation files
-write_simulation_files(
-    exp_sender, exp_receiver, total_ip, receivers, senders, meta_data, betas, output_path)
+exp_sender_fn, dist_sender_fn, exp_receiver_fn, meta_data_fn = write_simulation_files(
+    exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, 
+    betas, log_info, output_path)
 
+# Run spacia job
+spacia_R_job = os.path.join(spacia_path, 'spacia_job.R')
+ntotal = 20000
+nwarm = 5000
+nthin = 10
+nchain = 2
+spacia_job_stderr_log = os.path.join(output_path, 'Error_log.txt')
+'''
+spacia_path = args[1]
+exp_sender = args[2]
+dist_receiver_sender = args[3]
+receivers_mtx = args[4]
+job_id = args[5]
+ntotal = as.integer(args[6])
+nwarm= as.integer(args[7])
+nthin= as.integer(args[8])
+nchain= as.integer(args[9])
+output_path = args[10] # output path need to have '/' at the end
+'''
 # %%
 # 一个是viaration of simulated data。这个你弄起来容易。
-# 最好还有variation of model prior parameter distribution。你要是搞得定的话，你自己试试。不行的话，我教你。就是R code里面要tweak点东西。其实也没多难
+# 最好还有variation of model prior parameter distribution。
+# 你要是搞得定的话，你自己试试。不行的话，我教你。就是R code里面要tweak点东西。其实也没多难

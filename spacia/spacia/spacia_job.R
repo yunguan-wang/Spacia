@@ -51,12 +51,12 @@ args = commandArgs(trailingOnly=TRUE)
 spacia_path = args[1]
 exp_sender = args[2]
 dist_receiver_sender = args[3]
-receivers_mtx = args[4]
+exp_receiver = args[4]
 job_id = args[5]
 ntotal = as.integer(args[6])
-nwarm= as.integer(args[7])
-nthin= as.integer(args[8])
-nchain= as.integer(args[9])
+nwarm = as.integer(args[7])
+nthin = as.integer(args[8])
+nchain = as.integer(args[9])
 output_path = args[10] # output path need to have '/' at the end
 thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
@@ -71,9 +71,9 @@ source(paste(spacia_path,'MIL_wrapper.R', sep=''))
 ######## format input into proper formats ########
 
 # Read receiver matrix
-receivers_mtx = read.csv(
-    receivers_mtx, header=F, row.names = NULL, stringsAsFactors = F)$V1
-exp_receiver = receivers_mtx == 1
+exp_receiver = read.csv(
+    exp_receiver, header=F, row.names = NULL, stringsAsFactors = F)$V1
+exp_receiver = exp_receiver == 1
 
 # Read sender expression 
 exp_sender = fromJSON(file=exp_sender)
