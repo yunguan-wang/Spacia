@@ -50,7 +50,7 @@ library(rjson)
 args = commandArgs(trailingOnly=TRUE)
 spacia_path = args[1]
 exp_sender = args[2]
-dist_receiver_sender = args[3]
+dist_sender = args[3]
 exp_receiver = args[4]
 job_id = args[5]
 ntotal = as.integer(args[6])
@@ -87,10 +87,14 @@ dist_sender = sapply(dist_sender, function(x) x / max_dist)
 
 # Run the model 
 set.seed(0)
+t0 = Sys.time()
 res = MIL_C2Cinter(
   exp_receiver, dist_sender, exp_sender, 
   ntotal, nwarm, nthin, nchain, thetas)
-
+t1 = Sys.time()
+print(t1-t0)
+# Get memory use
+gc()
 # save job result to disk
 for (n in names(res)) {
     if (n == 'FDRs') {
@@ -103,7 +107,6 @@ for (n in names(res)) {
           res[n], paste(output_path, job_id,'_',n,'.txt', sep=''), sep='\t')
     }
 }
-
 # Debug purpose tests
 # need to see a high positive correlation here
 # plot(beta,colMeans(res$beta))

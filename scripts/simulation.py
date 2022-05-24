@@ -1,3 +1,6 @@
+'''
+Requires: R/4.0.2, gcc
+'''
 #%%
 import pandas as pd
 import seaborn as sns
@@ -9,6 +12,7 @@ import json
 import os
 import subprocess
 from multiprocessing import Pool
+import sys
 
 def simulate_grid(grid_size, num_dots, spacing=15):
     locations = np.random.uniform(0, grid_size, size=(1,2))
@@ -71,11 +75,12 @@ def simulate_senders_receivers(
     receivers = list(set(receivers))
     return senders, receivers
 
-def simulate_all_data():
+def simulate_all_data(
+    dist_cutoff = 50, num_primary_beta = 5, noise_level=None):
     np.random.seed(0)
     grid_size = 2000
     num_dots = 8000
-    dist_cutoff = 50
+    num_trivial_beta = 50 - num_primary_beta
     locations = simulate_grid(grid_size, num_dots)
     senders, receivers = simulate_senders_receivers(
         num_dots, locations,
@@ -103,10 +108,10 @@ def simulate_all_data():
         np.random.normal(size=[len(senders), 50]), index = senders)
 
     # simulate betas
-    primary_beta = np.random.normal(0, 1, size=10) * 10
+    primary_beta = np.random.normal(0, 1, size=num_primary_beta) * 10
     while (np.abs(primary_beta) < 10).any():
         primary_beta = [2*x if abs(x)<10 else x for x in primary_beta]
-    trivial_beta = np.random.normal(0 ,1, 40)
+    trivial_beta = np.random.normal(0 ,1, num_trivial_beta)
     betas = np.append(primary_beta, trivial_beta)
 
     # simulate receiver expression
@@ -115,6 +120,9 @@ def simulate_all_data():
         i_senders = pip[i]
         exp_receiver[i] = np.matmul(exp_sender.loc[i_senders], betas).sum() + np.random.normal(-0.2, 0.1)
     exp_receiver = (exp_receiver > 0) + 0
+    if noise_level is not None:
+        exp_receiver = exp_receiver + np.random.normal(0, noise_level, exp_receiver.shape)
+        exp_receiver = (exp_receiver > 0) + 0
     return exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas
 
 def write_simulation_files(
@@ -165,41 +173,94 @@ def write_simulation_files(
 
 def simulation_worker(cmd):
     # A simple wrapper for running denoise jobs.
-    log_fn = cmd[-1]
-    cmd = cmd[:-1]
     print(cmd)
-    with open(log_fn, "a") as outfile:
-        subprocess.run(cmd, stdout=outfile, stderr=outfile)
+    os.system(cmd)
     # os.system('rm -r output_fn') # Get rid of output.
     return
 #%%
 spacia_path = '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/spacia'
-output_path = spacia_path.replace('spacia', 'data/simulation/base')
+
+try:
+    dist_cutoff = sys.argv[1]
+except:
+    dist_cutoff = 50
+
+try:
+    num_primary_beta = sys.argv[2]
+except:
+    num_primary_beta = 5
+
+try:
+    noise_level = float(sys.argv[3])
+except:
+    noise_level = None
+
+if noise_level is None:
+    sim_prefix = 'base'
+else:
+    sim_prefix = 'noise_level_{:.1f}'.format(noise_level)
+# setting up output folder
+output_path = spacia_path.replace(
+    'spacia', 'data/simulation/{}_{}_pathways'.format(sim_prefix, num_primary_beta))
 
 #! Make sure the log info is accurate!!!
-log_info = 'Base 10 true beta, 40 trivial beta, roughly 10X difference in scale.'
+spacia_job_prefix = '{}_{}_pathways'.format(sim_prefix, num_primary_beta)
+log_info = spacia_job_prefix
 log_info = '\n'.join([
     log_info,
     '2000 x 2000 grid of cells, 5 blobs.',
-    'True sender distance cutoff: 50.',
-    'Sender exp = Normal expression ',
-]
-) 
+    'True sender distance cutoff: {}.'.format(dist_cutoff),
+    'Sender exp = Normal expression',
+    'Number of sender pathways: {}'.format(num_primary_beta),
+    'spacia job: ' + spacia_job_prefix,
+    ]
+)
 if not os.path.exists(output_path):
     os.makedirs(output_path)
-exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas = simulate_all_data()
+exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas = simulate_all_data(
+    dist_cutoff = dist_cutoff, 
+    num_primary_beta = num_primary_beta, 
+    noise_level = noise_level
+)
 # Write out simulation files
 exp_sender_fn, dist_sender_fn, exp_receiver_fn, meta_data_fn = write_simulation_files(
     exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, 
     betas, log_info, output_path)
 
 # Run spacia job
-spacia_R_job = os.path.join(spacia_path, 'spacia_job.R')
-ntotal = 20000
-nwarm = 5000
+spacia_R_job_path = os.path.join(spacia_path, 'spacia_job.R')
+ntotal = np.arange(10000,100000,10000)
 nthin = 10
 nchain = 2
-spacia_job_stderr_log = os.path.join(output_path, 'Error_log.txt')
+
+spacia_jobs = []
+for n in ntotal:
+    nwarm = int(min(20000, n/2))
+    job_id = '{}_Ntotal_{}Nwarm_{}'.format(spacia_job_prefix, n, nwarm)
+    spacia_output_path = os.path.join(output_path, job_id)
+    if not os.path.exists(spacia_output_path):
+        os.makedirs(spacia_output_path)
+    spacia_jobs.append(' '.join([
+        'Rscript',
+        spacia_R_job_path,
+        spacia_path + '/',
+        exp_sender_fn,
+        dist_sender_fn,
+        exp_receiver_fn,
+        job_id,
+        str(n),
+        str(nwarm),
+        str(nthin),
+        str(nchain),
+        spacia_output_path + '/',
+        ]
+        )
+    )
+
+with Pool(16) as p:
+    _ = p.map(simulation_worker, spacia_jobs)
+
+
 '''
 spacia_path = args[1]
 exp_sender = args[2]
