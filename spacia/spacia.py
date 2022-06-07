@@ -13,6 +13,7 @@ cd /project/shared/xiao_wang/projects/cell2cell_inter/data
 python ../code/spacia/spacia.py mini_Counts.txt Spot_metadata.txt C_1 C_2 pathways.txt
 """
 
+from itertools import count
 import os
 import sys
 import argparse
@@ -54,6 +55,54 @@ def calculate_neighbor_radius(
         elif (n_neighbors>target_n_neighbors) == (nn_r_min> target_n_neighbors):
             r_min = r_next
     return r_next
+
+def find_sender_candidates(receivers, senders, locations, dist_cutoff = 30):
+    '''
+    receivers, senders: list of spot ids.
+    locations: pd.DataFrame of X, Y locations
+    '''
+    pip = pd.Series(dtype = object)
+    for r in receivers:
+        dist_to_senders = cdist(
+            locations.loc[r].values.reshape(-1,2), 
+            locations.loc[senders].values.reshape(-1,2))[0]
+        crit = dist_to_senders <= dist_cutoff
+        if crit.sum() == 0:
+            continue
+        pip[r] = senders[crit].tolist()
+    return pip
+
+def preprocessing_counts(
+    counts, ntotal_cutoff = 100, n_genes_cutoff = 20, n_cells_cutoff = 10):
+    '''
+    Simple QC based on total counts, num_genes expressed in cell and num of cells a gene is expressed.
+    '''
+    counts = counts.T.groupby(counts.columns).mean().T
+    # add the total counts per cell as observations-annotation to counts
+    n_total = counts.sum(axis=1)
+    n_genes = np.sum(counts>0,axis=1)
+    n_cells = np.sum(counts>0,axis=0)
+    keep_cells = np.zeros(shape=[counts.shape[0]], dtype=bool)
+    keep_cells[:] = True
+    for i, df, cutoff, qc_type in zip(
+        [0, 0, 1],
+        [n_total, n_genes, n_cells],
+        [ntotal_cutoff, n_genes_cutoff, n_cells_cutoff],
+        ['Total counts', 'Total genes', 'Number of cells expressed in']):
+        crit = df < cutoff
+        num_bad = crit.sum()
+        if num_bad > 0:
+            print('{} {} are dropped because {} is less than {}.'.format(
+                num_bad, 'Cells' if i==0 else 'Genes', qc_type, cutoff
+            ))
+            if i == 0:
+                keep_cells = np.logical_and(keep_cells, ~crit)
+            else:
+                keep_genes = ~crit
+    filtered_counts = counts.iloc[keep_cells.values, keep_genes.values]
+    filtered_cpm = filtered_counts.apply(lambda x: 1e4*x/x.sum(), axis=1)
+    return filtered_cpm
+
 class StreamToLogger(object):
     """
     Fake file-like stream object that redirects writes to a logger instance.
@@ -94,19 +143,33 @@ if __name__ == "__main__":
     parser.add_argument(
         "receiver_cluster", type=str,
         help="Name of receiver cluster, must be in spot_metadata."
-    )
+    )    # TODO: Add options to take a txt file of cell ids instead of clusters.
 
     parser.add_argument(
         "sender_cluster", type=str,
         help="Name of sender cluster, must be in spot_metadata."
-    )
-    
+    )    # TODO: Add options to take a txt file of cell ids instead of clusters.
+
     parser.add_argument(
-        "pathway_lib", type=str,
-        help="Filename of the pathways to be evaluated. TXT format, two columns \
-            receiver gene/pathway, and sender gene/pathway"
-        # TODO: implement pathway level lib
-    )
+        "receiver_features", 
+        type = str,
+        help = "Receiver gene(s). Can be 1) a single gene; 2) multiple genes, separated by ',' \
+            each is treated as the seed of receiver pathway; 3) multiple genes, sep by '|' \
+            used as one pathway including provided genes; or 4) a csv file each row for a \
+            receiver pathway and columns are genes ."
+    )   # TODO: To be implemented
+
+    parser.add_argument(
+        "--sender_features",
+        "-sf",
+        type = str,
+        defaule = None,
+        help = "Sender gene(s). Can be 1) a single gene; 2) multiple genes, separated by ',' \
+            each is treated as the seed of receiver pathway; 3) multiple genes, sep by '|' \
+            used as one pathway including provided genes; or 4) a csv file each row for a \
+            sender pathway and columns are genes, must match the csv file of the receiver \
+            features input option 4)." 
+    )   # TODO: To be implemented
     
     parser.add_argument(
         "--output_path", 
@@ -114,6 +177,22 @@ if __name__ == "__main__":
         type=str,
         default = 'spacia',
         help="Output path"
+    )
+
+    parser.add_argument(
+        "--dist_cutoff", 
+        "-d", 
+        type=str,
+        default=None,
+        help="Name of sender cluster, must be in spot_metadata."
+    )
+
+    parser.add_argument(
+        "--num_corr_genes", 
+        "-nc", 
+        type = int,
+        default = 100,
+        help = "Number of correlated gene to use in calculating receiver pathway expression."
     )
 
     parser.add_argument(
@@ -137,14 +216,15 @@ if __name__ == "__main__":
 ######## Setting up ########
 
     # Debug params
-    # args = parser.parse_args(
-    #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt',
-    #     'C_1',
-    #     'C_2',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/pathways.txt']
-    #     )
+    args = parser.parse_args(
+        [
+        '/project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt',
+        '/project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt',
+        'C_1',
+        'C_2',
+        'FGFR1',
+        '/project/shared/xiao_wang/projects/cell2cell_inter/data/pathways.txt']
+        )
 
     args = parser.parse_args()
     counts = args.counts
@@ -154,6 +234,9 @@ if __name__ == "__main__":
     pathway_lib = args.pathway_lib
     output_path = args.output_path
     n_neighbors = args.n_neighbors
+    receiver_features = args.receiver_features
+    top_corr_genes = args.num_corr_genes
+    dist_cutoff = args.dist_cutoff
     mcmc_params = args.mcmc_params.replace(',', ' ')
 
     # Setting up logs
@@ -168,9 +251,10 @@ if __name__ == "__main__":
     )
     
     counts = pd.read_csv(counts, index_col=0, sep='\t')
-    # counts = counts.apply(lambda x: 1e6*x/x.sum(), axis=1)
     spot_meta = pd.read_csv(spot_meta, index_col=0, sep='\t')
-    pathway_lib = pd.read_csv(pathway_lib, index_col=0, sep='\t')
+    cpm = preprocessing_counts(counts)
+    cpm, spot_meta = cpm.align(spot_meta, join = 'inner', axis=0)
+    # pathway_lib = pd.read_csv(pathway_lib, index_col=0, sep='\t')
     # getting script path for supporting codes.
     spacia_path = os.path.abspath(__file__)
     spacia_path = "/".join(spacia_path.split("/")[:-1]) + '/spacia'
@@ -188,22 +272,41 @@ if __name__ == "__main__":
     sys.stderr = sl
 
 ######## Preparing spacia jobs ########
-    neighbor_r = calculate_neighbor_radius(
-        spot_meta.iloc[:,:2], target_n_neighbors=n_neighbors)
+    if dist_cutoff is None:
+        dist_cutoff = calculate_neighbor_radius(
+            spot_meta.iloc[:,:2], target_n_neighbors=n_neighbors)
     print(
         'Maximal distance for {} expected neighbors is {:.2f}'.format(
-            n_neighbors, neighbor_r
+            n_neighbors, dist_cutoff
         ))
-    receivers = spot_meta[spot_meta.cluster == receiver_cluster].index
-    senders = spot_meta[spot_meta.cluster == sender_cluster].index
+    receiver_candidates = spot_meta[spot_meta.cluster == receiver_cluster].index
+    senders_candidates = spot_meta[spot_meta.cluster == sender_cluster].index
     dist_matrix = cdist(spot_meta.iloc[:,:2],spot_meta.iloc[:,:2])
-    np.fill_diagonal(dist_matrix, np.inf)
-    dist_matrix = pd.DataFrame(
-        dist_matrix,
-        index = spot_meta.index, columns = spot_meta.index)
-    senders = dist_matrix.loc[receivers, senders]<=neighbor_r
-    senders = senders[senders.any(axis=1)]
-    senders = senders.apply(lambda x: x[x].index.tolist(), axis=1)
+    r2s_matrix = find_sender_candidates(
+        receiver_candidates,
+        senders_candidates,
+        spot_meta[['X','Y']],
+        dist_cutoff)
+
+    # Getting receiver expression
+    if receiver_features[-4:] == '.csv':
+        pass
+    elif '|' in receiver_features:
+        pass
+    elif ',' in receiver_features:
+        pass
+    else:
+        receiver_gene = receiver_features
+        corr = cdist(
+            cpm.loc[r2s_matrix.index, receiver_gene].values.reshape(1,-1),
+            cpm.loc[r2s_matrix.index].T,
+            metric = 'correlation'
+        )[0]
+        top_genes = cpm.columns[np.argsort(corr)[:100]]
+    #!TODO : continue here
+    # TODO:
+
+
     # Define the matrix shared by all child R processes
     sender_cells = np.unique(senders.sum())
     receiver_genes = pathway_lib.index.unique()
@@ -216,7 +319,7 @@ if __name__ == "__main__":
         sender_genes = pathway_lib.loc[receiver_gene].iloc[:,0].unique()
         sender_cts = counts.loc[sender_cells, sender_genes].round(2)
         sender_dist = dist_matrix.loc[receivers, sender_cells]
-        sender_dist = (sender_dist / neighbor_r).round(2)
+        sender_dist = (sender_dist / dist_cutoff).round(2)
         recivers_mtx = pd.DataFrame(
             senders.apply(lambda x: ','.join(x))).rename_axis(None)
         recivers_mtx.columns = ['senders']
