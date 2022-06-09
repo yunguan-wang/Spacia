@@ -133,6 +133,20 @@ if __name__ == "__main__":
         help= "MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}"
     )
 
+    parser.add_argument (
+        "--plot_mcmc",
+        action = "store_true", # Default == False
+        help = "Optional argument for plotting b and beta’s trace plots, density plots, \
+         autocorrelation plots, and PSRF plots."
+    )
+
+    parser.add_argument (
+        "--ext",
+        type = str,
+        help = "File formats for the mcmc plots to be saved.Can either be a device function \
+         (e.g. png), or one of eps, ps, tex (pictex), pdf, jpeg, tiff, png, bmp, svg or wmf (windows only)"
+    )
+
 
 ######## Setting up ########
 
@@ -155,6 +169,8 @@ if __name__ == "__main__":
     output_path = args.output_path
     n_neighbors = args.n_neighbors
     mcmc_params = args.mcmc_params.replace(',', ' ')
+    plot_mcmc = args.plot_mcmc
+    ext = args.ext
 
     # Setting up logs
     log_fn = os.path.join(output_path, "spacia_log.txt")
@@ -242,7 +258,9 @@ if __name__ == "__main__":
             ' '.join(spacia_job_inputs),
             job_id,
             mcmc_params,
-            output_path + '/'
+            output_path + '/',
+            plot_mcmc,
+            ext
             ]
             )
         spacia_r_jobs_list.append(spacia_job_params)
