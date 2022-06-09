@@ -1,5 +1,0 @@
-{
-    "r.alwaysUseActiveTerminal": true,
-    "r.rpath.linux": "/cm/shared/apps/R/gcc/4.0.2/bin/R",
-    "r.rterm.linux": "/cm/shared/apps/R/gcc/4.0.2/bin/R"
-}
