@@ -24,10 +24,9 @@ import argparse
 import logging
 import csv
 import json
+from multiprocessing import Pool
 import pandas as pd
 import numpy as np
-from multiprocessing import Pool
-from requests import head
 from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import robust_scale
@@ -165,8 +164,10 @@ def contruct_pathways(
                 spamreader = csv.reader(csvfile, delimiter=",")
                 for row in spamreader:
                     pathway_name = row[0]
+                    pathway_genes = [x for x in row[1:] if x != ""]
+                    pathway_genes = [x for x in pathway_genes if x in cpm.columns]
                     if len(pathway_genes) > 1:
-                        pathway_genes = [x for x in row[1:] if x != ""]
+                        pass
                     # If only one gene is present, will use correlations.
                     elif len(pathway_genes) == 1:
                         g = pathway_genes
@@ -261,11 +262,12 @@ if __name__ == "__main__":
         "-sf",
         type=str,
         default=None,
-        help="Sender gene(s). Can be 1) a single gene; 2) multiple genes, separated by ',' \
-            each is treated as the seed of receiver pathway; 3) multiple genes, sep by '|' \
-            used as one pathway including provided genes; or 4) a csv file each row for a \
-            sender pathway and columns are genes, must match the csv file of the receiver \
-            features input option 4).",
+        help="Sender gene(s). Can be: \
+            1) a single gene; \
+            2) multiple genes, sep by ',' each is a seed of receiver pathway; \
+            3) multiple genes, sep by '|' used together as one pathway; \
+            4) a csv file each row for a receiver pathway and columns are genes, \
+                first column contains pathways names.",
     )
 
     parser.add_argument(
@@ -313,13 +315,6 @@ if __name__ == "__main__":
         help="MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}",
     )
 
-    parser.add_argument(
-        "--keep_intermediate",
-        "-k",
-        action="store_false",
-        default=True,
-        help="Whether the intermediate folder should be deleted.",
-    )
 
     parser.add_argument(
         "--receiver_cluster",
@@ -346,8 +341,15 @@ if __name__ == "__main__":
              first columns for receiver cells, second for sender cells.",
     )
 
-    ######## Setting up ########
+    parser.add_argument(
+        "--keep_intermediate",
+        "-k",
+        action="store_false",
+        default=True,
+        help="Whether the intermediate folder should be deleted.",
+    )
 
+    ######## Setting up ########
     # Debug params
     # args = parser.parse_args(
     #     [
@@ -411,6 +413,7 @@ if __name__ == "__main__":
 
     ######## Processing counts and receiver and sender cells ########
     # Processing counts and spot_metadata
+    print('Processing expression counts.')
     counts = pd.read_csv(counts, index_col=0, sep="\t")
     spot_meta = pd.read_csv(spot_meta, index_col=0, sep="\t")
     cpm = preprocessing_counts(counts)
@@ -449,6 +452,12 @@ if __name__ == "__main__":
     receiver_pathways, sender_pathways = contruct_pathways(
         cpm, receiver_candidates, sender_candidates, receiver_features, sender_features
     )
+    # If no receiver pathways are found, abort.
+    if len(receiver_pathways.keys()) == 0:
+        print('None of the genes in the provided receiver pathways are found in \
+            the expression matrix, please modify the input and try again.')
+        raise ValueError()
+        
     for pathway_dict, fn in zip(
         [receiver_pathways, sender_pathways],
         ["receiver_pathways.json", "sender_pathways.json"],
@@ -607,16 +616,3 @@ if __name__ == "__main__":
     # Remove intermediate files
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
-
-# Debug codes
-# Receiver gene(s). Can be
-# 1) a single gene;
-# 2) multiple genes, separated by ',' each is treated as the seed of receiver pathway;
-# 3) multiple genes, sep by '|' \used as one pathway including provided genes;
-# 4) a csv file each row for a receiver pathway and columns are genes .
-# receiver_features = 'FGFR1'
-# receiver_features = 'FGFR1|FGFR2'
-# receiver_features = '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/example_receiver_pathways.csv'
-# receiver_features = 'FGFR1,FGFR2'
-# sender_features = 'FGF1,FGF2,FGF7,FGF9,FGF10,FGF11,FGF12,FGF13,FGF14,FGF17,FGF18'
-# sender_features = None
