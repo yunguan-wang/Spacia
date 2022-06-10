@@ -290,13 +290,14 @@ if ntotal is None:
 else:
     n_min, n_max_, n_step = [int(x) for x in ntotal.split(',')]
     ntotal = np.arange(n_min, n_max_, n_step)
-nthin = 10
+nthin = 100
 nchain = 2
 
 spacia_jobs = []
 for n in ntotal:
     nwarm = int(min(20000, n/2))
-    job_id = 'spacia_{}_Ntotal_{}_Nwarm_{}'.format(spacia_job_prefix, n, nwarm)
+    job_id = 'spacia_{}_Ntotal_{}_Nwarm_{}_Nthin_{}'.format(
+        spacia_job_prefix, n, nwarm, nthin)
     spacia_output_path = os.path.join(output_path, job_id)
     if not os.path.exists(spacia_output_path):
         os.makedirs(spacia_output_path)
