@@ -121,7 +121,7 @@ BetaB2MCMCPlots <- function(beta_matrix,
   } else {
     ggs_Rhat(S) + xlab("R_hat")
     ggsave(paste(output_path, job_id,'_psrf.', ext, sep=''), 
-           width = size[3], height = size[2], units = "cm")
+           width = round(size[3]/3), height = round(size[2]/6), units = "cm")
   }
 
   
