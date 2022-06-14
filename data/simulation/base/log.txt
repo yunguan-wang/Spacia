@@ -1,4 +1,0 @@
-Base 10 true beta, 40 trivial beta, roughly 10X difference in scale.
-2000 x 2000 grid of cells, 5 blobs.
-True sender distance cutoff: 50.
-Sender exp = Normal expression 

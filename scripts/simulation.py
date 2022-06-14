@@ -10,9 +10,8 @@ from scipy.spatial.distance import cdist
 from collections import defaultdict
 import json
 import os
-import subprocess
+import argparse
 from multiprocessing import Pool
-import sys
 
 def simulate_grid(grid_size, num_dots, spacing=15):
     locations = np.random.uniform(0, grid_size, size=(1,2))
@@ -121,9 +120,16 @@ def simulate_all_data(
         exp_receiver[i] = np.matmul(exp_sender.loc[i_senders], betas).sum() + np.random.normal(-0.2, 0.1)
     exp_receiver = (exp_receiver > 0) + 0
     if noise_level is not None:
-        exp_receiver = exp_receiver + np.random.normal(0, noise_level, exp_receiver.shape)
-        exp_receiver = (exp_receiver > 0) + 0
-    return exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas
+        exp_sender += np.random.normal(0, noise_level, size=[len(senders), 50])
+    
+    df_betas = pd.DataFrame(
+        betas, 
+        index = [
+            'True_beta' if x < num_primary_beta else 'Trivial_beta' for x in range(50)
+            ],
+        columns = ['Val']
+        )
+    return exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, df_betas
 
 def write_simulation_files(
     exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas, 
@@ -154,7 +160,7 @@ def write_simulation_files(
         header=None, 
         index=None)
 
-    pd.Series(betas).to_csv(output_path + '/betas.csv', header=None, index=None)
+    betas.to_csv(output_path + '/betas.csv')
 
     # metadata 
     meta_data_fn = output_path + '/simulation_metadata.txt'
@@ -178,30 +184,80 @@ def simulation_worker(cmd):
     # os.system('rm -r output_fn') # Get rid of output.
     return
 #%%
-spacia_path = '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/spacia'
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    description="Simulation script for spacia",
+)
 
-try:
-    dist_cutoff = sys.argv[1]
-except:
-    dist_cutoff = 50
+parser.add_argument(
+    "--output_prefix",
+    "-o",
+    default=None,
+    type=str,
+    help="Output prefix used in the output.",
+)
 
-try:
-    num_primary_beta = sys.argv[2]
-except:
-    num_primary_beta = 5
+parser.add_argument(
+    "--dist_cutoff",
+    "-d",
+    type=int,
+    default=50,
+    help="Distance cutoff for deciding true sender cells.",
+)
 
-try:
-    noise_level = float(sys.argv[3])
-except:
-    noise_level = None
+parser.add_argument(
+    "--num_primary_beta",
+    "-n",
+    type=int,
+    default=5,
+    help="Number of primary betas.",
+)
+parser.add_argument(
+    "--noise_level",
+    "-l",
+    type=float,
+    default=None,
+    help="Noise level, 0-1.",
+)
 
+parser.add_argument(
+    "--ntotal",
+    "-t",
+    type = str,
+    default=None,
+    help="Total number of N, in the format of nmin,nmax,step.",
+)
+
+parser.add_argument(
+    "--spath",
+    "-s",
+    type = str,
+    default='/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/spacia',
+    help="Spacia root path.",
+)
+
+args = parser.parse_args()
+output_prefix = args.output_prefix
+dist_cutoff = args.dist_cutoff
+num_primary_beta = args.num_primary_beta
+noise_level = args.noise_level
+ntotal = args.ntotal
+spacia_path = args.spath
+
+# setting up output folder
 if noise_level is None:
     sim_prefix = 'base'
 else:
     sim_prefix = 'noise_level_{:.1f}'.format(noise_level)
-# setting up output folder
-output_path = spacia_path.replace(
-    'spacia', 'data/simulation/{}_{}_pathways'.format(sim_prefix, num_primary_beta))
+if output_prefix is not None:
+    output_path = output_prefix + '{}_{}_pathways'.format(sim_prefix, num_primary_beta)
+else:
+    output_path = spacia_path.replace(
+        'spacia', 
+        'data/simulation/{}_{}_pathways'.format(sim_prefix, num_primary_beta))
+if not os.path.exists(output_path):
+    os.makedirs(output_path)
+
 
 #! Make sure the log info is accurate!!!
 spacia_job_prefix = '{}_{}_pathways'.format(sim_prefix, num_primary_beta)
@@ -215,8 +271,7 @@ log_info = '\n'.join([
     'spacia job: ' + spacia_job_prefix,
     ]
 )
-if not os.path.exists(output_path):
-    os.makedirs(output_path)
+
 exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, betas = simulate_all_data(
     dist_cutoff = dist_cutoff, 
     num_primary_beta = num_primary_beta, 
@@ -227,16 +282,22 @@ exp_sender_fn, dist_sender_fn, exp_receiver_fn, meta_data_fn = write_simulation_
     exp_sender, exp_receiver, total_ip, pip, receivers, senders, meta_data, 
     betas, log_info, output_path)
 
+#%%
 # Run spacia job
 spacia_R_job_path = os.path.join(spacia_path, 'spacia_job.R')
-ntotal = np.arange(10000,100000,10000)
-nthin = 10
+if ntotal is None:
+    ntotal = [50000]
+else:
+    n_min, n_max_, n_step = [int(x) for x in ntotal.split(',')]
+    ntotal = np.arange(n_min, n_max_, n_step)
+nthin = 100
 nchain = 2
 
 spacia_jobs = []
 for n in ntotal:
     nwarm = int(min(20000, n/2))
-    job_id = '{}_Ntotal_{}Nwarm_{}'.format(spacia_job_prefix, n, nwarm)
+    job_id = 'spacia_{}_Ntotal_{}_Nwarm_{}_Nthin_{}'.format(
+        spacia_job_prefix, n, nwarm, nthin)
     spacia_output_path = os.path.join(output_path, job_id)
     if not os.path.exists(spacia_output_path):
         os.makedirs(spacia_output_path)
