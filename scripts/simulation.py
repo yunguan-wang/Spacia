@@ -225,7 +225,7 @@ parser.add_argument(
     "-t",
     type = str,
     default=None,
-    help="Total number of N, in the format of nmin,nmax,step.",
+    help="Total number of N, in the format of nmin,nmax,step. or ntotal1|ntotal2|...",
 )
 
 parser.add_argument(
@@ -287,6 +287,8 @@ exp_sender_fn, dist_sender_fn, exp_receiver_fn, meta_data_fn = write_simulation_
 spacia_R_job_path = os.path.join(spacia_path, 'spacia_job.R')
 if ntotal is None:
     ntotal = [50000]
+elif '|' in ntotal:
+    ntotal = [int(x) for x in ntotal.split('|')]
 else:
     n_min, n_max_, n_step = [int(x) for x in ntotal.split(',')]
     ntotal = np.arange(n_min, n_max_, n_step)

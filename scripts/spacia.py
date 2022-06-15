@@ -122,6 +122,21 @@ def preprocessing_counts(
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
+def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
+    if corr_agg:
+        print('Constructing pathway using correlation aggregation')
+        corr = cdist(
+            cpm.loc[cells, g].values.reshape(1, -1),
+            cpm.loc[cells].T,
+            metric="correlation",
+        )[0]
+        pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
+        pathway_name = g + "_correlated genes"
+    else:
+        logging.warning("Correlation aggregation is turned off and \
+            this pathway has only one gene. This is not recommended.")
+        pathway_name = g
+    return pathway_genes, pathway_name
 
 def contruct_pathways(
     cpm, receiver_candidates, sender_candidates, receiver_features, sender_features,
@@ -133,13 +148,14 @@ def contruct_pathways(
         [receiver_features, sender_features],
         ["Receiver", "Sender"],
     ):
+        cells  = receiver_candidates if pathway_type == "Receiver" else sender_candidates
         if pathway_features is None:
             print(
                 "{} features is not provides, use gene modules as sender pathways.".format(pathway_type)
             )
             # calculate clusters
             pathway_exp = cpm.loc[
-                sender_candidates,
+                cells,
             ]
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
             # add an expression level cutoff to reduce the number of genes
@@ -174,15 +190,10 @@ def contruct_pathways(
                         if g not in cpm.columns:
                             print("{} not found in expression data.".format(g))
                             continue
-                        corr = cdist(
-                            cpm.loc[receiver_candidates, g].values.reshape(1, -1),
-                            cpm.loc[receiver_candidates].T,
-                            metric="correlation",
-                        )[0]
-                        pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
-                        pathway_name = g + "_correlated genes"
+                        pathway_genes, pathway_name = get_corr_agg_genes(
+                            corr_agg, cpm, cells, g, top_corr_genes)
                     else:
-                        continue
+                        continue # just to handle blank lines
                     pathway_dict[pathway_name] = pathway_genes
         elif "|" in pathway_features:
             print("Cosntruct 1 {} pathway from input genes".format(pathway_type))
@@ -195,14 +206,9 @@ def contruct_pathways(
                 if g not in cpm.columns:
                     print("{} not found in expression data.".format(g))
                     continue
-                corr = cdist(
-                    cpm.loc[receiver_candidates, g].values.reshape(1, -1),
-                    cpm.loc[receiver_candidates].T,
-                    metric="correlation",
-                )[0]
-                top_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
-                key = g + "_correlated genes" if pathway_type == "Sender" else g
-                pathway_dict[key] = top_genes.tolist()
+                pathway_genes, pathway_name = get_corr_agg_genes(
+                    corr_agg, cpm, cells, g, top_corr_genes)
+                pathway_dict[pathway_name] = pathway_genes.tolist()
     return receiver_pathways, sender_pathways
 
 
@@ -228,7 +234,24 @@ class StreamToLogger(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Main function for running spacia",
+        description="Main function for running spacia. This are running modes and spacia will \
+            automatically decide which one to use based on the 'receiver/sender features' and \
+            the 'corr_agg' toggle. Below are the four modes: \n\t\
+            (1) No aggregation: The user either provides one or several single genes, \
+            for sending/receiving pathways. These will be used in the analysis directly; \n\t\
+            (2) Correlation-driven aggregation: The users will provide a list of single genes. \
+            Each single gene will be expanded, in spacia internally, to a pathway, \
+            based on highly positively correlated genes. The user will provide a correlation cutoff \
+            to select the highly positively correlated genes for each seed gene; \n\t\
+            (3) Knowledge-driven aggregation: The users can provide a .csv file, \
+            detailing what genes to group into pathways, for sending/receiving pathways. \
+            Users can refer to CellChat, CellphoneDB and other appropriate resources to collect \
+            such pre-defined pathways and their member genes. But users need to take care to only \
+            include genes that are supposedly positively correlated in the same pathway; \n\t\
+            (4) Clustering-driven aggregation: If the users do not provide any information, \n\t\
+            spacia will perform un-supervised clustering and divide all genes into modules based on \
+            positive correlation, based on the positive correlation cutoff the users provided. \
+            Each module will be treated as a pathway.",
     )
 
     parser.add_argument(
@@ -241,7 +264,8 @@ if __name__ == "__main__":
         "spot_meta",
         help="Path for spot positional information, spots by features. TXT format. \
             must have 'X', 'Y' columns for coordinates. 'cluster' columns is needed \
-            if running with '-rc' and '-sc' parameters."
+            if running with '-rc' and '-sc' parameters. 'cluster' refers to the group designation of cells, \
+            e.g., type of cells. The user can specify which group of cells to use for spacia"
     )
 
     parser.add_argument(
@@ -250,11 +274,17 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Receiver gene(s). Can be: \
-            1) a single gene; \
-            2) multiple genes, sep by ',' each is a seed of receiver pathway; \
-            3) multiple genes, sep by '|' used together as one pathway; \
+            1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
+            otherwise mode (2); \
+            2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
+            Spacia will run in mode (2); \
+            3) multiple genes, sep by '|' used together as one pathway. Spacia will \
+            run in mode (3); \
             4) a csv file each row for a receiver pathway and columns are genes, \
-                first column contains pathways names.",
+            first column contains pathways names. Spacia will run in mode (3) if \
+            the pathway contains multiple genes. If there is only one gene in the pathway,\
+            spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
+            5) if nothing is passed, spacia will run in mode (4).",
     )
 
     parser.add_argument(
@@ -263,11 +293,17 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Sender gene(s). Can be: \
-            1) a single gene; \
-            2) multiple genes, sep by ',' each is a seed of receiver pathway; \
-            3) multiple genes, sep by '|' used together as one pathway; \
+            1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
+            otherwise mode (2); \
+            2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
+            Spacia will run in mode (2); \
+            3) multiple genes, sep by '|' used together as one pathway. Spacia will \
+            run in mode (3); \
             4) a csv file each row for a receiver pathway and columns are genes, \
-                first column contains pathways names.",
+            the first column contains pathway names. Spacia will run in mode (3) if \
+            the pathway contains multiple genes. If there is only one gene in the pathway,\
+            spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
+            5) if nothing is passed, spacia will run in mode (4).",
     )
 
     parser.add_argument(
@@ -295,7 +331,8 @@ if __name__ == "__main__":
         "-nc",
         type=int,
         default=100,
-        help="Number of correlated gene to use in calculating receiver pathway expression.",
+        help="Number of correlated gene to use in calculating receiver pathway expression.\
+            This option only matters if the user has not toggle off the 'corr_agg' option.",
     )
 
     parser.add_argument(
@@ -338,7 +375,8 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Name of a csv file for receiver and sender cell ids. \
-             first columns for receiver cells, second for sender cells.",
+             first columns for receiver cells, second for sender cells. Will be \
+             overridden if 'receiver_cluster' and 'sender_cluster' are given",
     )
 
     parser.add_argument(
@@ -347,6 +385,16 @@ if __name__ == "__main__":
         action="store_false",
         default=True,
         help="Whether the intermediate folder should be deleted.",
+    )
+
+    parser.add_argument(
+        "--corr_agg",
+        "-ca",
+        action="store_false",
+        default=True,
+        help="This is a toggle to turn off correlation based aggregation. If it is \
+            turned off, spacia evaluate the effect of one gene in the sender cells on \
+            another gene in the receiver cells.",
     )
 
     ######## Setting up ########
@@ -379,6 +427,7 @@ if __name__ == "__main__":
     dist_cutoff = args.dist_cutoff
     receiver_exp_cutoff = args.receiver_exp_cutoff
     mcmc_params = args.mcmc_params
+    corr_agg = args.corr_agg
     ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
     keep = args.keep_intermediate
 

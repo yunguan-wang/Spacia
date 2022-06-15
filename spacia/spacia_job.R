@@ -58,6 +58,8 @@ nwarm = as.integer(args[7])
 nthin = as.integer(args[8])
 nchain = as.integer(args[9])
 output_path = args[10] # output path need to have '/' at the end
+plot_mcmc = as.logical(args[11])
+ext = args[12]
 thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
 
@@ -67,6 +69,7 @@ sink(file = paste(output_path, job_id, '_log.txt', sep=''))
 sourceCpp(paste(spacia_path,"Fun_MICProB_C2Cinter.cpp", sep=''))
 source(paste(spacia_path,'MICProB_MIL_C2Cinter.R', sep=''))
 source(paste(spacia_path,'MIL_wrapper.R', sep=''))
+source(paste(spacia_path,'BetaB2MCMCPlots.R', sep=''))
 
 ######## format input into proper formats ########
 
@@ -115,3 +118,23 @@ for (n in names(res)) {
 # plot(beta[1:10],colMeans(res$beta)[1:10])
 # cor(beta[1:10],colMeans(res$beta)[1:10])
 
+
+########### Plot MCMC Diagnostics ##############
+if (plot_mcmc) {
+  
+  beta_matrix = as.matrix(res$beta)
+  b_matrix = as.matrix(res$b)
+  colnames(beta_matrix) = paste("beta.", 1:dim(beta_matrix)[2], sep="")
+  colnames(b_matrix) = c("b.1", "b.2")
+  
+  S <- BetaB2MCMCPlots(beta_matrix,
+                       b_matrix,
+                       nwarm,
+                       ntotal,
+                       nthin,
+                       nchain,
+                       job_id,
+                       output_path,
+                       ext)
+  
+}
