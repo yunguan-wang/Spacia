@@ -45,8 +45,10 @@ plot_b <- function(B_path="B_and_FDR.csv", Theta_cutoff=0.9) {
     ylim = c( min(ylim,0), max(0,ylim) )
     col = my_col2rgb("red", 0.5 )
     
+    cex = 1.3
     x = barplot(B$b, space=space, xlim=xlim , ylim=ylim, 
-                border=NA, names=receiver, las=3, ylab="Posterior samples")
+                border=NA, names=receiver, las=3, ylab="Posterior samples",
+                cex.axis=cex, cex.names=cex, cex.lab=cex)
     y = (x[1]/2.2)*minuslog10FDR/max(minuslog10FDR)
     tmp = sapply(1:length(x), function(i) 
         draw.circle(x[i,1], B$b[i], y[i], col=col, border=col) )
