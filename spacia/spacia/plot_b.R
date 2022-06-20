@@ -1,17 +1,17 @@
 #' plot_b
 #'
-#' @param B_path a character value representing the path to the file of b
-#' @param Theta_cutoff a numeric value representing the cutoff of theta
+#' @param b_path a character value representing the path to the file of b
+#' @param theta_cutoff a numeric value representing the cutoff of theta
 #' 
 #' @export
 #'
 #' @examples
 #' 
 #' setwd("/Users/shijiazhu/Documents/MyPackages/Git/spacia/data_sz/shijia_simulation/")
-#' B_path = "/Users/shijiazhu/Documents/MyPackages/Git/spacia/data_sz/shijia_simulation/B_and_FDR.csv"
-#' plot_b(B_path)
+#' b_path = "/Users/shijiazhu/Documents/MyPackages/Git/spacia/data_sz/shijia_simulation/B_and_FDR.csv"
+#' plot_b(b_path)
 #' 
-plot_b <- function(B_path="B_and_FDR.csv", Theta_cutoff=0.9) {
+plot_b <- function(b_path="B_and_FDR.csv", theta_cutoff=0.9) {
     
     library(ggplot2)
     library(ggalluvial)
@@ -23,8 +23,8 @@ plot_b <- function(B_path="B_and_FDR.csv", Theta_cutoff=0.9) {
         rgb(color[1],color[2],color[3],max=255,alpha=transparency*255)
     }
     
-    B = read.csv(B_path, header=T)
-    B = B[ B$Theta_cutoff==Theta_cutoff , ]
+    B = read.csv(b_path, header=T)
+    B = B[ B$Theta_cutoff==theta_cutoff , ]
     n = nrow(B)
     
     if(1) {
