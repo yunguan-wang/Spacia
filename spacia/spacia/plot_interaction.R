@@ -1,42 +1,37 @@
 #' plot_interaction
 #'
-#' @param plot_pathway the pathway of interest to plot. If plot_pathway=="all", then draw all pathways by aggregating the signals.
-#' @param metadata_path a character value representing the path to metadata
-#' @param exp_receiver_path a character value representing the path to receiver expression
-#' @param exp_sender_path  a character value representing the path to sender expression
-#' @param beta_path  a character value representing the path to beta values
-#' @param sender_col a character value indicating the color of sender cells
-#' @param reciever_col a character value indicating the color of reciever cells
-#' @param interaction_col a character value indicating the color of arrows
-#' @param PI_size a numeric value indicating the size of PI nodes
-#' @param interaction_size a numeric value indicating the length of interaction arrows
+#' @param sending_pathway the pathway of interest to plot. If sending_pathway=="all", then draw all pathways by aggregating the signals.
+#' @param receiving_pathway_path a character value representing the path to receiving pathway result folder
 #'
 #' @return
 #' @export
 #'
 #' @examples
-#' setwd("/archive/SCCC/Hoshida_lab/s184554/Code/github/spacia/data_sz/simulation")
-#' plot_interaction(plot_pathway="all")
-#' plot_interaction(plot_pathway="1")
+#' receiving_pathway_path = "/Users/shijiazhu/Documents/MyPackages/Git/spacia/data_sz/simulation"
+#' plot_interaction(receiving_pathway_path, sending_pathway="all")
+#' plot_interaction(receiving_pathway_path, sending_pathway="1")
 #' 
-plot_interaction <- function(plot_pathway, 
-                             metadata_path = "simulation_metadata.txt",
-                             exp_receiver_path = "exp_receiver.csv",
-                             exp_sender_path = "exp_sender.json",
-                             beta_path = "_beta.txt",
-                             sender_col='brown2' ,
-                             receiver_col='dodgerblue1',
-                             interaction_col='springgreen2',
-                             PI_size = 1,
-                             interaction_size=0) {   
+plot_interaction <- function(receiving_pathway_path,
+                             sending_pathway) {   
     
     library(rjson)
-    
+
     my_col2rgb = function(col, transparency)
     {
         color = col2rgb(col)
         rgb(color[1],color[2],color[3],max=255,alpha=transparency*255)
     }
+    
+    prior_path = setwd(receiving_pathway_path)
+    metadata_path = "simulation_metadata.txt"
+    exp_receiver_path = "exp_receiver.csv"
+    exp_sender_path = "exp_sender.json"
+    beta_path = "_beta.txt"
+    sender_col='brown2'
+    receiver_col='dodgerblue1'
+    interaction_col='springgreen2'
+    PI_size = 1
+    interaction_size=0
     
     ########### read spot location
     loc = read.delim(metadata_path, sep="\t", header=T, row.names=1)
@@ -96,10 +91,10 @@ plot_interaction <- function(plot_pathway,
         sdj = c()
         for( i in 1:length(senderj))
         {
-            if(plot_pathway=='all') {
+            if(sending_pathway=='all') {
                 sdj[i] = sum( betaS * exp_sender2[ senderj[i], ] )
             } else {
-                exp_p = exp_sender2[ , plot_pathway ]
+                exp_p = exp_sender2[ , sending_pathway ]
                 sdj[i] = exp_p[ senderj[i] ]
             }
         }   
@@ -114,7 +109,7 @@ plot_interaction <- function(plot_pathway,
             points( xi, yi, col=ci, pch=16, cex=PI_size)
         }
         
-        if(plot_pathway=='all') {
+        if(sending_pathway=='all') {
             rdj = 1 - abs( exp_receiver2[j] - pnorm(sum(sdj)) )
         } else {
             rdj = exp_receiver2[j]
@@ -124,7 +119,8 @@ plot_interaction <- function(plot_pathway,
         points(xj,yj, col=cj, pch=16, cex=PI_size)
     }
 
-    par(mar=Pmargin)
     
+    par(mar=Pmargin)
+    setwd(prior_path)
 }
 
