@@ -9,6 +9,17 @@ getHyperPars <- function(tidydata){
     
     hp_Sig_beta = diag(c(1,rep(1,D-1)),D), 
     hp_Sig_b = diag(c(1,rep(1,1)),2)
+
+    # Testing model priors
+
+    # hp_Sig_beta = diag(c(1000,rep(1000,D-1)),D), 
+    # hp_Sig_b = diag(c(1000,rep(1000,1)),2)
+
+    # hp_Sig_beta = diag(c(100,rep(100,D-1)),D), 
+    # hp_Sig_b = diag(c(100,rep(100,1)),2)
+
+    # hp_Sig_beta = diag(c(10,rep(10,D-1)),D), 
+    # hp_Sig_b = diag(c(10,rep(10,1)),2)
   )
   return(res)
 }
