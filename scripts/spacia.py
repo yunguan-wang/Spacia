@@ -29,7 +29,7 @@ import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
-from sklearn.preprocessing import robust_scale
+from sklearn.preprocessing import robust_scale, scale
 
 
 def spacia_worker(cmd):
@@ -397,6 +397,21 @@ if __name__ == "__main__":
             another gene in the receiver cells.",
     )
 
+    parser.add_argument (
+        "--plot_mcmc",
+        action = "store_true",
+        default = False,
+        help = "Optional argument for plotting b and beta’s trace plots, density plots, \
+         autocorrelation plots, and PSRF plots."
+    )
+
+    parser.add_argument (
+        "--ext",
+        type = str,
+        help = "File formats for the mcmc plots to be saved.Can either be a device function \
+         (e.g. png), or one of eps, ps, tex (pictex), pdf, jpeg, tiff, png, bmp, svg or wmf (windows only)"
+    )
+
     ######## Setting up ########
     # Debug params
     # args = parser.parse_args(
@@ -430,6 +445,8 @@ if __name__ == "__main__":
     corr_agg = args.corr_agg
     ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
     keep = args.keep_intermediate
+    plot_mcmc = args.plot_mcmc
+    ext = args.ext
 
     intermediate_folder = os.path.join(output_path, "intermediate")
     if not os.path.exists(intermediate_folder):
@@ -542,8 +559,8 @@ if __name__ == "__main__":
         index=sender_candidates, columns=sender_pathways.keys()
     )
     for key in sender_pathway_exp.columns:
-        sender_pathway_exp[key] = (
-            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1).values
+        sender_pathway_exp[key] = scale(
+            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
         )
     sender_exp = (
         r2s_matrix.to_frame()
@@ -588,6 +605,8 @@ if __name__ == "__main__":
                     str(nthin),
                     str(nchain),
                     spacia_output_path + "/",
+                    plot_mcmc,
+                    ext,
                 ]
             )
         )

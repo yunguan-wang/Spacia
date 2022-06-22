@@ -58,8 +58,8 @@ nwarm = as.integer(args[7])
 nthin = as.integer(args[8])
 nchain = as.integer(args[9])
 output_path = args[10] # output path need to have '/' at the end
-plot_mcmc = as.logical(args[11])
-ext = args[12]
+plot_mcmc = as.logical(args[11]) # whether or not to plot diagnosis plots
+ext = args[12] # extension used for the ggsave. see BetaB2MCMCPlots.R
 thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
 
@@ -110,14 +110,6 @@ for (n in names(res)) {
           res[n], paste(output_path, job_id,'_',n,'.txt', sep=''), sep='\t')
     }
 }
-# Debug purpose tests
-# need to see a high positive correlation here
-# plot(beta,colMeans(res$beta))
-# cor(beta,colMeans(res$beta))
-# 
-# plot(beta[1:10],colMeans(res$beta)[1:10])
-# cor(beta[1:10],colMeans(res$beta)[1:10])
-
 
 ########### Plot MCMC Diagnostics ##############
 if (plot_mcmc) {
