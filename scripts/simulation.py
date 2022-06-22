@@ -316,6 +316,8 @@ for n in ntotal:
         str(nthin),
         str(nchain),
         spacia_output_path + '/',
+        'T',
+        'pdf'
         ]
         )
     )
