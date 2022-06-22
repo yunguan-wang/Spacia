@@ -131,7 +131,7 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
             metric="correlation",
         )[0]
         pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
-        pathway_name = g + "_correlated genes"
+        pathway_name = g + "_correlated_genes"
     else:
         logging.warning("Correlation aggregation is turned off and \
             this pathway has only one gene. This is not recommended.")
@@ -384,7 +384,7 @@ if __name__ == "__main__":
         "-k",
         action="store_false",
         default=True,
-        help="Whether the intermediate folder should be deleted.",
+        help="Whether the model_input folder should be deleted.",
     )
 
     parser.add_argument(
@@ -408,6 +408,7 @@ if __name__ == "__main__":
     parser.add_argument (
         "--ext",
         type = str,
+        default = 'pdf',
         help = "File formats for the mcmc plots to be saved.Can either be a device function \
          (e.g. png), or one of eps, ps, tex (pictex), pdf, jpeg, tiff, png, bmp, svg or wmf (windows only)"
     )
@@ -445,10 +446,10 @@ if __name__ == "__main__":
     corr_agg = args.corr_agg
     ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
     keep = args.keep_intermediate
-    plot_mcmc = args.plot_mcmc
+    plot_mcmc = 'T' if args.plot_mcmc else 'F'
     ext = args.ext
 
-    intermediate_folder = os.path.join(output_path, "intermediate")
+    intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
         os.makedirs(intermediate_folder)
 
@@ -531,9 +532,9 @@ if __name__ == "__main__":
         with open(os.path.join(intermediate_folder, fn), "w") as fp:
             json.dump(pathway_dict, fp) # Save receiver and sender pathways
 
-    print('Writing spacia_job.R inputs to the intermediate folder.')
+    print('Writing spacia_job.R inputs to the model_input folder.')
     dist_sender_fn = os.path.join(intermediate_folder, "dist_sender.json")
-    metadata_fn = os.path.join(intermediate_folder, "metadata.csv")
+    metadata_fn = os.path.join(intermediate_folder, "metadata.txt")
     exp_sender_fn = os.path.join(intermediate_folder, "exp_sender.json")
     # Calculate each receiver sender pair distances
     dist_r2s = r2s_matrix.to_frame().apply(
@@ -552,7 +553,9 @@ if __name__ == "__main__":
     # contruct and save metadata
     meta_data = spot_meta.loc[receiver_candidates, :"Y"]
     meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
-    meta_data.to_csv(metadata_fn, sep="\t")
+    meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
+    meta_data = meta_data.append(meta_data_senders)
+    meta_data.to_csv(metadata_fn, sep='\t')
 
     # contruct and save sender exp
     sender_pathway_exp = pd.DataFrame(
@@ -620,7 +623,7 @@ if __name__ == "__main__":
     with Pool(16) as p:
         _ = p.map(spacia_worker, spacia_jobs)
     
-    # Collect all results
+    ######## Collect all results ########
     print('Collecting results.')
     meta_data = pd.read_csv(metadata_fn, index_col=0, sep="\t")
     with open(os.path.join(intermediate_folder, "sender_pathways.json"), "r") as f:
@@ -681,6 +684,6 @@ if __name__ == "__main__":
         interactions.to_csv(os.path.join(output_path, "Interactions.csv"))
         b_plus_fdr.to_csv(os.path.join(output_path, "B_and_FDR.csv"))
     
-    # Remove intermediate files
+    # Remove model_input files
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
