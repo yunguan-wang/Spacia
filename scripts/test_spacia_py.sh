@@ -12,7 +12,8 @@ python /endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/scr
     -rf FGFR1,FGFR2 \
     -o /endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spaciapy_test \
     -rc C_1 -sc C_2 \
-    -sf FGF1,FGF2,FGF7,FGF9,FGF10,FGF11,FGF12,FGF13,FGF14,FGF17,FGF18
+    -sf FGF1,FGF2,FGF7,FGF9,FGF10,FGF11,FGF12,FGF13,FGF14,FGF17,FGF18 \
+    --plot_mcmc
 
 # python /endosome/work/InternalMedicine/s190548/software/cell2cell_inter/code/scripts/spacia.py \
 #     /project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt \
