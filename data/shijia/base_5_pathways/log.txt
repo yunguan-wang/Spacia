@@ -1,6 +1,0 @@
-base_5_pathways
-2000 x 2000 grid of cells, 5 blobs.
-True sender distance cutoff: 50.
-Sender exp = Normal expression
-Number of sender pathways: 5
-spacia job: base_5_pathways
