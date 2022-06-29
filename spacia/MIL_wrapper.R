@@ -37,7 +37,7 @@
 ########3  MIL wrapper  #####################
 
 MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
-  ntotal,nwarm,nthin,nchain,thetas)
+  ntotal,nwarm,nthin,nchain,thetas,prior)
 {
   # organize into Danyi's original format
   tidy_train=list()
@@ -66,7 +66,8 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
                             nthin,
                             nchain,
                             #scale,
-                            return_delta=TRUE)
+                            return_delta=TRUE,
+                            prior)
   
   # organize results
   pip=c() # col=nchain, row=number of senders

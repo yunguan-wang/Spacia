@@ -12,6 +12,9 @@ getHyperPars <- function(tidydata){
 
     # Testing model priors
 
+    # hp_Sig_beta = diag(c(5, rep(5, D-1)),D), 
+    # hp_Sig_b = diag(c(5, rep(5, 1)),2)
+
     # hp_Sig_beta = diag(c(1000,rep(1000,D-1)),D), 
     # hp_Sig_b = diag(c(1000,rep(1000,1)),2)
 
@@ -78,7 +81,8 @@ MICProB_sampler<-function(tidytrain,
                         nthin,
                         nchain,
                         #scale,
-                        return_delta){
+                        return_delta,
+                        prior = 1){
   
   cat("=============================================================\n")
   cat(sprintf("Probit Bayesian Multiple Instance Classification\n"))
@@ -103,6 +107,12 @@ MICProB_sampler<-function(tidytrain,
     hp_mu_b<-parlist$hp_mu_b
     hp_Sig_beta<-parlist$hp_Sig_beta
     hp_Sig_b<-parlist$hp_Sig_b
+
+    if (prior != 1) {
+      hp_Sig_beta = diag(c(prior, rep(prior, d-1)),d)
+      hp_Sig_b = diag(c(prior, rep(prior, 1)),2)
+      cat(sprintf("prior b and beta resetted.\n"))
+    }
     
     beta<-parlist$beta
     b<-parlist$b
