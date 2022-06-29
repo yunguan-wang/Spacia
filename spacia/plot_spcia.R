@@ -116,8 +116,8 @@ job_interactions = interactions[(interactions[,1] == job_id) & (interactions$Pri
 job_interactions = job_interactions[,2:4]
 colnames(job_interactions) = c('X','Y','weight')
 coordinates = read.table(metadata_fn, header=T, sep='\t')
-coordinates$X = coordinates$X * 0.3
-coordinates$Y = coordinates$Y * 0.3
+coordinates$X = coordinates$X * 0.25
+coordinates$Y = coordinates$Y * 0.25
 
 plot_interaction_direction(img_fn, job_interactions, coordinates,position_scale = 1, point_scale = 2,
                            sender_col='darkred', reciever_col='steelblue', interaction_col='darkgreen',
