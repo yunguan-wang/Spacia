@@ -348,7 +348,7 @@ if __name__ == "__main__":
         "--mcmc_params",
         "-m",
         type=str,
-        default="50000,20000,100,1",
+        default="50000,20000,100,2",
         help="MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}",
     )
 
