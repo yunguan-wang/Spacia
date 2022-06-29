@@ -120,6 +120,5 @@ plot_interaction <- function(
 
     
     par(mar=Pmargin)
-    setwd(prior_path)
 }
 

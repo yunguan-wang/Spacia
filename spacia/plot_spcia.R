@@ -86,10 +86,7 @@ beta_fn = file.path(
 ########  Load all required plotting functions  ########
 source(file.path(spacia_path, "plot_interaction.R"))
 source(file.path(spacia_path, "plot_density_ridgeline.R"))
-source(file.path(spacia_path, "plot_interaction_circos.R"))
-source(file.path(spacia_path, "plot_interaction_direction.R"))
-source(file.path(spacia_path, "plot_interaction_proportion.R"))
-source(file.path(spacia_path, "plot_interaction_river.R"))
+source(file.path(spacia_path, "plot_interaction.R"))
 source(file.path(spacia_path, "plot_b.R"))
 source(file.path(spacia_path, "plot_sankey.R"))
 
@@ -109,18 +106,51 @@ pdf(file.path(results_path,'Pathway Sankey.pdf'),width = 10, height = 6)
 plot_sankey(pathway_betas_fn, sankey_rn, sankey_sn, sankey_shortname)
 dev.off()
 
-# plot_interaction(metadata_fn,exp_receiver_fn, exp_sender_fn, beta_fn, interactions_fn, 'all', 0.2)
-
+# Plot interactions between spots for each receiving pathway.
 interactions = read.table(interactions_fn, sep=',', header=T)
-job_interactions = interactions[(interactions[,1] == job_id) & (interactions$Primary_instance_score>=theta),]
-job_interactions = job_interactions[,2:4]
-colnames(job_interactions) = c('X','Y','weight')
-coordinates = read.table(metadata_fn, header=T, sep='\t')
-coordinates$X = coordinates$X * 0.25
-coordinates$Y = coordinates$Y * 0.25
+if (is.null(job_id)) {
+    job_id_list = unique(interactions$X)
+} else {job_id_list = c(job_id)}
 
-plot_interaction_direction(img_fn, job_interactions, coordinates,position_scale = 1, point_scale = 2,
-                           sender_col='darkred', reciever_col='steelblue', interaction_col='darkgreen',
-                           image_alpha=0.5, cell_alpha=1, interaction_alpha=5, interaction_size=0.1)
+for (job_id in job_id_list) {
+    # Prep metadata for plot_interactions
+    meta_data = read.delim(metadata_fn, sep="\t", header=T, row.names=1)
+    meta_data[meta_data$Sender_cells!='','Celltype'] = 'Receivers'
+    meta_data[meta_data$Sender_cells=='','Celltype'] = 'Senders'
+    meta_data$Sender_cells_PI = ''
+    job_interactions = interactions[
+        (interactions[,1] == job_id) & (interactions$Primary_instance_score>=theta),]
+    job_interactions = job_interactions %>% 
+        group_by(Receiver) %>% 
+        summarise(Sender_cells_PI = paste0(Sender , collapse = ","))
+    meta_data[job_interactions$Receiver,'Sender_cells_PI'] = job_interactions$Sender_cells_PI
+    interaction_meta_fn = file.path(results_path, 'plot_interactions_meta.txt')
+    # Write temp file
+    write.table(meta_data,interaction_meta_fn , sep="\t")
+    plot_interaction(interaction_meta_fn,exp_receiver_fn, exp_sender_fn, beta_fn, 'all')
+    unlink(interaction_meta_fn)
+}
+
+# im <- readImage(img_fn)
+# im2 <- 0.5*im + 0.5*(im*0+1)
+# im_reshaped = array(data = 0., dim=c(dim(im2)[2], dim(im2)[1],3))
+# im_reshaped[,,1] = t(im2[,,1])
+# im_reshaped[,,2] = t(im2[,,2])
+# im_reshaped[,,3] = t(im2[,,3])
+
+# plot(im2)
+
+# job_interactions = interactions[(interactions[,1] == job_id) & (interactions$Primary_instance_score>=theta),]
+# job_interactions = job_interactions[,2:4]
+# colnames(job_interactions) = c('X','Y','weight')
+# coordinates = read.table(metadata_fn, header=T, sep='\t')
+# coordinates$X = coordinates$X * 0.25
+# coordinates$Y = coordinates$Y * 0.25
+# 
+# plot_interaction_direction(img_fn, job_interactions, coordinates,position_scale = 1, point_scale = 2,
+#                            sender_col='darkred', reciever_col='steelblue', interaction_col='darkgreen',
+#                            image_alpha=0.5, cell_alpha=1, interaction_alpha=5, interaction_size=0.1)
+
+# plot interaction data prep
 
 
