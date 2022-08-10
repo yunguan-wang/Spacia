@@ -100,6 +100,8 @@ def preprocessing_counts(
     n_cells = np.sum(counts > 0, axis=0)
     keep_cells = np.zeros(shape=[counts.shape[0]], dtype=bool)
     keep_cells[:] = True
+    keep_genes = np.zeros(shape=[counts.shape[1]], dtype=bool)
+    keep_genes[:] = True
     for i, df, cutoff, qc_type in zip(
         [0, 0, 1],
         [n_total, n_genes, n_cells],
@@ -117,8 +119,8 @@ def preprocessing_counts(
             if i == 0:
                 keep_cells = np.logical_and(keep_cells, ~crit)
             else:
-                keep_genes = ~crit
-    filtered_counts = counts.iloc[keep_cells.values, keep_genes.values]
+                keep_genes = ~crit.values
+    filtered_counts = counts.iloc[keep_cells.values, keep_genes]
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
@@ -151,7 +153,7 @@ def contruct_pathways(
         cells  = receiver_candidates if pathway_type == "Receiver" else sender_candidates
         if pathway_features is None:
             print(
-                "{} features is not provides, use gene modules as sender pathways.".format(pathway_type)
+                "{} features is not provided, use gene modules as pathways.".format(pathway_type)
             )
             # calculate clusters
             pathway_exp = cpm.loc[
@@ -160,7 +162,7 @@ def contruct_pathways(
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
             # add an expression level cutoff to reduce the number of genes
             top_expressed_genes = pathway_exp.mean().sort_values()[
-                -int(pathway_exp.shape[1] / 4) :
+                -(max(int(pathway_exp.shape[1] / 4), 500)) :
             ]
             pathway_exp = pathway_exp[top_expressed_genes.index]
             gene_clusters = AgglomerativeClustering(
@@ -256,7 +258,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "counts",
-        help="Path for gene expression data, spots by genes, normalized. \
+        help="Path for gene expression data, spots by genes, raw counts. \
             TXT format",
     )
 

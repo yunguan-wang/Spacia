@@ -127,18 +127,19 @@ for (job_id in job_id_list) {
     interaction_meta_fn = file.path(results_path, 'plot_interactions_meta.txt')
     # Write temp file
     write.table(meta_data,interaction_meta_fn , sep="\t")
+    pdf(
+        file.path(results_path,paste(job_id,' interactions.pdf', sep='')),
+        width = 10, height = 6)
     plot_interaction(interaction_meta_fn,exp_receiver_fn, exp_sender_fn, beta_fn, 'all')
+    dev.off()
     unlink(interaction_meta_fn)
 }
 
-# im <- readImage(img_fn)
-# im2 <- 0.5*im + 0.5*(im*0+1)
-# im_reshaped = array(data = 0., dim=c(dim(im2)[2], dim(im2)[1],3))
-# im_reshaped[,,1] = t(im2[,,1])
-# im_reshaped[,,2] = t(im2[,,2])
-# im_reshaped[,,3] = t(im2[,,3])
+im <- readImage(img_fn)
+im2 <- 0.5*im + 0.5*(im*0+1)
 
-# plot(im2)
+display(aperm(im2, c(2,1,3)))
+display(im2)
 
 # job_interactions = interactions[(interactions[,1] == job_id) & (interactions$Primary_instance_score>=theta),]
 # job_interactions = job_interactions[,2:4]
