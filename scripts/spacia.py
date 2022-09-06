@@ -1,6 +1,6 @@
 """
 # TODO: Fillme
-
+# TODO: make coord linux friendly
 Dependency
 ----------
 R >= 4.0.2
@@ -120,7 +120,7 @@ def preprocessing_counts(
                 keep_cells = np.logical_and(keep_cells, ~crit)
             else:
                 keep_genes = ~crit.values
-    filtered_counts = counts.iloc[keep_cells.values, keep_genes]
+    filtered_counts = counts.loc[keep_cells, keep_genes]
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
@@ -132,6 +132,7 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
             cpm.loc[cells].T,
             metric="correlation",
         )[0]
+        corr = corr[corr>0]
         pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
         pathway_name = g + "_correlated_genes"
     else:
@@ -240,7 +241,8 @@ if __name__ == "__main__":
             automatically decide which one to use based on the 'receiver/sender features' and \
             the 'corr_agg' toggle. Below are the four modes: \n\t\
             (1) No aggregation: The user either provides one or several single genes, \
-            for sending/receiving pathways. These will be used in the analysis directly; \n\t\
+            for sending/receiving pathways. These will be used in the analysis directly; \
+            These genes have to be positively correlated. \n\t\
             (2) Correlation-driven aggregation: The users will provide a list of single genes. \
             Each single gene will be expanded, in spacia internally, to a pathway, \
             based on highly positively correlated genes. The user will provide a correlation cutoff \
@@ -265,8 +267,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "spot_meta",
         help="Path for spot positional information, spots by features. TXT format. \
-            must have 'X', 'Y' columns for coordinates. 'cluster' columns is needed \
-            if running with '-rc' and '-sc' parameters. 'cluster' refers to the group designation of cells, \
+            must have 'X', 'Y' columns for coordinates. 'cell_type' columns is needed \
+            if running with '-rc' and '-sc' parameters. 'cell_type' refers to the group designation of cells, \
             e.g., type of cells. The user can specify which group of cells to use for spacia"
     )
 
@@ -294,7 +296,7 @@ if __name__ == "__main__":
         "-sf",
         type=str,
         default=None,
-        help="Sender gene(s). Can be: \
+        help="Sender gene(s). At least two pathways are recommended. Can be: \
             1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
             otherwise mode (2); \
             2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
@@ -360,7 +362,7 @@ if __name__ == "__main__":
         "-rc",
         type=str,
         default=None,
-        help="Name of receiver cluster, must be in spot_metadata.",
+        help="Name of receiver cell_type, must be in spot_metadata.",
     )
 
     parser.add_argument(
@@ -368,7 +370,7 @@ if __name__ == "__main__":
         "-sc",
         type=str,
         default=None,
-        help="Name of sender cluster, must be in spot_metadata.",
+        help="Name of sender cell_type, must be in spot_metadata.",
     )
 
     parser.add_argument(
@@ -499,8 +501,8 @@ if __name__ == "__main__":
         )
     )
     if (sender_cluster is not None) & (sender_cluster is not None):
-        r_cells = spot_meta[spot_meta.cluster == receiver_cluster].index
-        s_cells = spot_meta[spot_meta.cluster == sender_cluster].index
+        r_cells = spot_meta[spot_meta.cell_type == receiver_cluster].index
+        s_cells = spot_meta[spot_meta.cell_type == sender_cluster].index
     elif cellid_file is not None:
         cellids = pd.read_csv(cellid_file, header=None)
         r_cells = cellids.iloc[:, 0].dropna().values
