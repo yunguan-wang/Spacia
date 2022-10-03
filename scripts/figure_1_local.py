@@ -12,7 +12,7 @@ from scipy.spatial.distance import cdist
 import seaborn as sns
 import matplotlib.ticker as ticker
 from skimage import morphology, io
-
+from skimage import draw
 def marker_overlay(
     gene1, gene2, spot_meta, cpm, img, cells_1, cells_2, color1, color2, interactions, 
     output=None, no_raw_img = False):
@@ -32,7 +32,7 @@ def marker_overlay(
         gene_v = cpm.loc[cells, gene]
         gene_v = (255*gene_v / gene_v.max()).astype('uint8')
         gene_v[gene_v == 0] = 20
-        cmap = sns.light_palette(color, as_cmap=True)
+        cmap = sns.dark_palette(color, as_cmap=True, reverse=True)
         norm = mpl.colors.Normalize(vmin=0, vmax=255)
         mapper = cm.ScalarMappable(norm=norm, cmap=cmap)
         for id, row in spot_meta.iterrows():
@@ -56,13 +56,21 @@ def marker_overlay(
         io.imshow(merged_img, ax = ax)
     spot_meta['X'] = spot_meta['X'] - x_min
     spot_meta['Y'] = spot_meta['Y'] - y_min
-    for _, row in interactions.iterrows():
-        try:
-            x, y = spot_meta.loc[row['sender'], ['X','Y']]
-            x1, y1 = spot_meta.loc[row['receiver'], ['X','Y']]
-            ax.arrow(y,x, y1-y, x1-x, width=1, color='k')
-        except:
-            continue
+    if interactions is not None:
+        for _, row in interactions.iterrows():
+            try:
+                x, y = spot_meta.loc[row['sender'], ['X','Y']]
+                x1, y1 = spot_meta.loc[row['receiver'], ['X','Y']]
+                y_offset = r * np.sin(np.arctan2((y1-y), (x1-x)))
+                x_offset = r * np.cos(np.arctan2((y1-y), (x1-x)))
+                ax.arrow(
+                    y+y_offset,
+                    x+x_offset, 
+                    y1-y-2*y_offset, 
+                    x1-x-2*x_offset, 
+                    lw=5, color='k')
+            except:
+                continue
     plt.axis('off')
     if output is not None:
         plt.savefig(output)
@@ -264,8 +272,9 @@ dists = dists.stack().reset_index()
 dists.columns = ['sender', 'receiver', 'distance']
 dists = dists[dists.distance<=max_d]
 dists['Distance_bin'] = pd.cut(
-    dists.distance, bins=[0,7,max_d], include_lowest = True)
+    dists.distance, bins=[0,15,max_d], include_lowest = True)
 dists = dists.dropna()
+
 
 emt_genes = [
     'CDH2','CDH11','FN1','VIM','TWIST1','SNAI1','ZEB1','ZEB2','DCN',
@@ -339,6 +348,180 @@ plt.legend(bbox_to_anchor = (1, 0.5), loc='center left', markerscale=3)
 plt.tight_layout()
 plt.savefig(output_path + '/celltypes_pseudoimage.pdf')
 
+_ = plt.figure(figsize=(16,10))
+sns.scatterplot(
+    data = pseudo_img, x = 'X', y = 'Y', hue = 'celltype', linewidth=0, 
+    s = 30, palette = colors, hue_order = color_order)
+plt.legend(bbox_to_anchor = (1, 0.5), loc='center left', markerscale=3)
+plt.xlim((500,2500))
+plt.ylim((0,2000))
+plt.tight_layout()
+plt.savefig(output_path + '/celltypes_pseudoimage_zoom.pdf')
+
+#%%
+
+# Get interactions
+interactions = dists.copy()
+interactions[gene1] = sender.loc[interactions.sender.values].values
+interactions['FN1'] = cpm.loc[interactions.receiver.values, 'FN1'].values
+gene1sum = interactions.groupby(
+    ['Distance_bin', 'receiver']
+    )[gene1].mean().reset_index()
+gene1sum[gene1] = gene1sum[gene1].fillna(0)
+gene1sum.columns = ['Distance_bin', 'receiver'] + [gene1 + '_sum']
+interactions = interactions.merge(gene1sum, on=['Distance_bin', 'receiver'])
+#
+all_cells = np.unique(interactions.iloc[:,:2].values.flatten())
+pseudo_img = meta_data.loc[all_cells]
+pseudo_img = pd.concat([pseudo_img,cpm], axis=1, join = 'inner')
+pseudo_img['TGFB'] = pseudo_img[['TGFB1', 'TGFB2','TGFB3']].mean(axis=1)
+
+# _ = plt.figure(figsize=(16,10))
+# # sns.scatterplot(
+# #     data = pseudo_img, x = 'X', y = 'Y', hue = 'celltype', linewidth=0, 
+# #     s = 10)
+# sns.scatterplot(
+#     data = pseudo_img[pseudo_img.celltype=='Fibroblasts'], 
+#     x = 'X', y = 'Y', hue = 'TGFB', linewidth=0, s=20,
+#     palette='Reds',legend=None
+#     )
+# sns.scatterplot(
+#     data = pseudo_img[pseudo_img.celltype!='Fibroblasts'], 
+#     x = 'X', y = 'Y', hue = 'FN1', linewidth=0, 
+#     s=20, palette='Blues', legend=None,)
+# plt.xlim((500,2500))
+# plt.ylim((0,2000))
+# plt.legend(bbox_to_anchor = (1, 0.5), loc='center left', markerscale=3)
+# plt.tight_layout()
+# Process cell coordinates
+cell_coords = pd.read_csv(input_path + '/cell_coords.csv', index_col=0)
+cell_coords['coord'] = cell_coords.apply(
+    lambda x: np.array(
+        (
+            [float(i) for i in x[0].split('_')],
+            [float(i) for i in x[1].split('_')])
+        ).T, 
+    axis = 1)
+cell_coords['X_center'] = cell_coords.coord.apply(lambda x: x[:,0].mean())
+cell_coords['Y_center'] = cell_coords.coord.apply(lambda x: x[:,1].mean())
+cell_coords.index = ['cell_' + str(x+1) for x in cell_coords.index]
+#%%
+# xlim = (800,1300)
+# ylim = (0,500)
+for (m,n) in [
+    (15,1), (11,13),(7,11),(4,8),(3,11),(2,2),(1,0)
+]:
+    xlim = (m*500,(m+1)*500)
+    ylim = (n*500,(n+1)*500)
+    xmin = xlim[0]
+    ymin = ylim[0]
+
+    patch = cell_coords[
+        (cell_coords['X_center'] >= xlim[0]) &
+        (cell_coords['X_center'] <= xlim[1]) &
+        (cell_coords['Y_center'] >= ylim[0]) &
+        (cell_coords['Y_center'] <= ylim[1])
+        ].copy()
+
+    cmap = sns.color_palette(palette='hsv', n_colors=10, as_cmap=False)
+    cmap.append((0,0,0))
+    cmap = pd.Series(
+        cmap, 
+        index =[
+            'Tumor epithelial cells',
+            'Normal epithelial cells',
+            'CD8 T cells',
+            'Th cells',
+            'Treg cells',
+            'NK cells',
+            'B cells',
+            'Endothelial cells',
+            'Fibroblasts',
+            'Myeloid cells',
+            'unknown',
+            ]
+    )
+
+    int_cells = interactions[interactions.distance <= 30].iloc[:,:2].stack().unique()
+    int_fib = [x for x in int_cells if meta_data.loc[x, 'celltype'] == 'Fibroblasts']
+    int_epi = [x for x in int_cells if meta_data.loc[x, 'celltype'] != 'Fibroblasts']
+    cpm['TGFB'] = cpm[['TGFB1', 'TGFB2','TGFB3']].mean(axis=1)
+    for i in range(2):
+        cells = [int_fib, int_epi][i]
+        gene = ['TGFB','FN1'][i]
+        color = [cmap['Fibroblasts'],cmap['Tumor epithelial cells']][i]
+        gene_max = cpm.loc[cells, gene].max()
+        gene_min = cpm.loc[cells, gene].min()
+        _cmap = sns.dark_palette(color, as_cmap=True, reverse=True)
+        norm = mpl.colors.Normalize(vmin=gene_min*1.25, vmax=gene_max)
+        if i == 0:
+            mapper_1 = cm.ScalarMappable(norm=norm, cmap=_cmap)
+        else:
+            mapper_2 = cm.ScalarMappable(norm=norm, cmap=_cmap)
+
+    img = np.zeros((xlim[1]-xlim[0],ylim[1]-ylim[0],3), dtype=float)
+    img[:] = 1
+    int_img = img.copy()
+    for cell, row in patch.iterrows():
+        pologon = row['coord'].copy()
+        if xmin>0:
+            pologon[:,0] = pologon[:,0] - xmin
+        if ymin>0:
+            pologon[:,1] = pologon[:,1] - ymin
+        if cell not in meta_data.index:
+            continue
+        ctype = meta_data.loc[cell, 'celltype']
+        
+        if cell in int_cells:
+            if ctype == 'Fibroblasts':
+                gene_exp = cpm.loc[cell, 'TGFB']
+                mapper = mapper_1
+            else:
+                gene_exp = cpm.loc[cell, 'FN1']
+                mapper = mapper_2
+            int_img_color = np.array(mapper.to_rgba(gene_exp))[:3]
+            int_img[draw.polygon2mask(img.shape[:2], pologon),:] = int_img_color
+        else:
+            color = cmap[meta_data.loc[cell,'celltype']]
+            img[draw.polygon2mask(img.shape[:2], pologon),:] = color
+
+    # _ = plt.figure(figsize=(16,10))
+    # io.imshow(img)
+    _ = plt.figure(figsize=(16,10))
+    io.imshow(img*0.1 + 0.9*int_img)
+    plot_meta = meta_data.copy()
+    plot_meta.X = plot_meta.X - xmin
+    plot_meta.Y = plot_meta.Y - ymin
+    for _, row in interactions[interactions.distance <= 25].iterrows():
+        s,r = row[:2]
+        if (s in patch.index) & (r in patch.index):
+            x, y = plot_meta.loc[s, ['X','Y']]
+            x1, y1 = plot_meta.loc[r, ['X','Y']]
+            plt.arrow(
+                y,
+                x, 
+                y1-y, 
+                x1-x, 
+                lw=3, color='k')
+            
+    plt.savefig(output_path + '/final_patch_{}_{}.pdf'.format(xlim[0],ylim[0]))
+    plt.close()
+
+#%%
+gene1 = 'TGFB'
+gene2 = 'FN1'
+plot_data = dists.copy()
+plot_data[gene1] = sender.loc[plot_data.sender.values].values
+plot_data[gene2] = cpm.loc[plot_data.receiver.values, gene2].values
+gene1sum = plot_data.groupby(
+    ['Distance_bin', 'receiver']
+    )[gene1].mean().reset_index()
+gene1sum[gene1] = gene1sum[gene1].fillna(0)
+gene1sum.columns = ['Distance_bin', 'receiver'] + [gene1 + '_sum']
+plot_data = plot_data.merge(gene1sum, on=['Distance_bin', 'receiver'])
+cells_1 = plot_data.receiver.unique()
+meta_data.loc[cells_1].Y.max()
+interactions = plot_data[plot_data.distance<=15]
 # %%
 # ======================================================================
 # ======================================================================
@@ -488,6 +671,8 @@ _ = marker_overlay(
     output=output_path + '/visium_figure_PDCD1_CD274_zoom.pdf',
     )
 
+cells1 = meta_data[meta_data['Type'] == 'I/S'].index
+cells2 = meta_data[meta_data['Type'] != 'I/S'].index
 _ = marker_overlay(
     'PDCD1', 'CD274',
     meta_data, cpm, img=img, 
@@ -495,7 +680,21 @@ _ = marker_overlay(
     cells_2=cells2,
     color1='#79af97',
     color2='#df8f44',
-    interactions=interactions,
-    output=output_path + '/visium_figure_PDCD1_CD274.pdf',
+    interactions=None,
+    output=output_path + '/visium_figure_PDCD1_CD274_all_cells.pdf',
     )
 
+#%%
+plotdata = meta_data.copy()
+plotdata['Celltype'] = ['Stromal/Immune' if x == 'I/S' else 'Tumor' for x in plotdata['Type']]
+_ = plt.figure(figsize=(12,6))
+sns.scatterplot(
+    data = plotdata, x = 'X', y = 'Y', hue = 'Celltype', linewidth = 0, s=30,
+    markers='h', palette=['#79af97','#df8f44']
+)
+plt.legend(bbox_to_anchor = (1,.5), loc='center left', markerscale=4)
+plt.tight_layout()
+plt.xlabel('')
+plt.ylabel('')
+plt.savefig(output_path + '/visium_BRCA_pseudoimage.pdf')
+# %%
