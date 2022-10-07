@@ -25,6 +25,7 @@ import logging
 import csv
 import json
 from multiprocessing import Pool
+from matplotlib.pyplot import xlabel
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -41,6 +42,40 @@ def spacia_worker(cmd):
     # os.system('rm -f {}'.format(' '.join(spacia_job_inputs)))
     return
 
+def cal_norm_dispersion(cts):
+    '''
+    Adapted from Scanpy _highly_variable_genes_single_batch.
+    https://github.com/theislab/scanpy/blob/f7279f6342f1e4a340bae2a8d345c1c43b2097bb/scanpy/preprocessing/_highly_variable_genes.py
+    '''
+    mean, var = cts.mean(),  cts.std()
+    mean[mean == 0] = 1e-12  # set entries equal to zero to small value
+    dispersion = var / mean
+    dispersion[dispersion == 0] = np.nan
+    dispersion = np.log(dispersion)
+    mean = np.log1p(mean)
+
+    # all of the following quantities are "per-gene" here
+    df = pd.DataFrame()
+    df['means'] = mean
+    df['dispersions'] = dispersion
+    df['mean_bin'] = pd.cut(df['means'], bins=20)
+    disp_grouped = df.groupby('mean_bin')['dispersions']
+    disp_mean_bin = disp_grouped.mean()
+    disp_std_bin = disp_grouped.std(ddof=1)
+    # retrieve those genes that have nan std, these are the ones where
+    # only a single gene fell in the bin and implicitly set them to have
+    # a normalized disperion of 1
+    one_gene_per_bin = disp_std_bin.isnull()
+    disp_std_bin[one_gene_per_bin.values] = disp_mean_bin[
+        one_gene_per_bin.values
+    ].values
+    disp_mean_bin[one_gene_per_bin.values] = 0
+    # actually do the normalization
+    df['dispersions_norm'] = (
+        df['dispersions'].values  # use values here as index differs
+        - disp_mean_bin[df['mean_bin'].values].values
+    ) / disp_std_bin[df['mean_bin'].values].values
+    return df.means.values, df.dispersions_norm.values
 
 def calculate_neighbor_radius(
     spot_meta, sample_size=1000, target_n_neighbors=10, margin=10, r_min=1, r_max=1000
@@ -156,22 +191,41 @@ def contruct_pathways(
             print(
                 "{} features is not provided, use gene modules as pathways.".format(pathway_type)
             )
-            # calculate clusters
-            pathway_exp = cpm.loc[
-                cells,
-            ]
+            # Get gene modules
+            
+            pathway_exp = cpm.loc[cells,:]
+            # Remove genes with all 0s
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
-            # add an expression level cutoff to reduce the number of genes
-            top_expressed_genes = pathway_exp.mean().sort_values()[
-                -(max(int(pathway_exp.shape[1] / 4), 500)) :
-            ]
-            pathway_exp = pathway_exp[top_expressed_genes.index]
+            
+            # Calculate normalized dispersion and use it as cutoff
+            mean, ndisp = cal_norm_dispersion(pathway_exp)
+            top_expressed_genes = (mean>=0.05) & (ndisp>0.05)
+
+            pathway_exp = pathway_exp.loc[:,top_expressed_genes].copy()
+            pathway_exp.loc[:,:] = scale(pathway_exp) # zscoring
+            # correlation distance cutoff at 0.15
             gene_clusters = AgglomerativeClustering(
-                50, affinity="correlation", linkage="complete"
-            ).fit_predict(robust_scale(pathway_exp.T))
+                None,
+                affinity='correlation',
+                linkage="complete", 
+                distance_threshold=0.85,
+                ).fit_predict(pathway_exp.T)
+            
+            # clean up clusters, removing singleton and big clusters
+            vc = pd.Series(gene_clusters).value_counts()
+            vc = vc.index[(vc>=5) & (vc<=100)]
+            # assign genes not in a valid cluster to cluster -1
+            gene_clusters = np.array([x if x in vc else -1 for x in gene_clusters])
+
             # construct sender_pathway
-            print("Cosntruct 50 {} pathways from gene modules".format(pathway_type))
+            n_c = np.unique(gene_clusters[gene_clusters!=-1]).shape[0]
+            print(
+                "Cosntruct {} {} pathways from gene modules".format(pathway_type,n_c)
+                )
             for cluster in np.unique(gene_clusters):
+                # ignore bad gene cluster -1
+                if cluster == -1:
+                    continue
                 gene_mask = gene_clusters == cluster
                 pathway_dict["module_" + str(cluster + 1)] = pathway_exp.columns[
                     gene_mask
@@ -423,7 +477,6 @@ if __name__ == "__main__":
     #     [
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt',
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt',
-    #     'FGFR1',
     #     '-o', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test',
     #     '-rc', 'C_1',
     #     '-sc', 'C_2',
@@ -487,6 +540,10 @@ if __name__ == "__main__":
     print('Processing expression counts.')
     counts = pd.read_csv(counts, index_col=0, sep="\t")
     spot_meta = pd.read_csv(spot_meta, index_col=0, sep="\t")
+    if not all(x in spot_meta.columns for x in ['X','Y','cell_type']):
+        raise ValueError(
+            "Metadata must have ['X','Y','cell_type'] columns!"
+        )
     cpm = preprocessing_counts(counts)
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
 
