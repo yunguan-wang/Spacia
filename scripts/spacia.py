@@ -1,6 +1,6 @@
 """
 # TODO: Fillme
-
+# TODO: make coord linux friendly
 Dependency
 ----------
 R >= 4.0.2
@@ -25,6 +25,7 @@ import logging
 import csv
 import json
 from multiprocessing import Pool
+from matplotlib.pyplot import xlabel
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -41,6 +42,40 @@ def spacia_worker(cmd):
     # os.system('rm -f {}'.format(' '.join(spacia_job_inputs)))
     return
 
+def cal_norm_dispersion(cts):
+    '''
+    Adapted from Scanpy _highly_variable_genes_single_batch.
+    https://github.com/theislab/scanpy/blob/f7279f6342f1e4a340bae2a8d345c1c43b2097bb/scanpy/preprocessing/_highly_variable_genes.py
+    '''
+    mean, var = cts.mean(),  cts.std()
+    mean[mean == 0] = 1e-12  # set entries equal to zero to small value
+    dispersion = var / mean
+    dispersion[dispersion == 0] = np.nan
+    dispersion = np.log(dispersion)
+    mean = np.log1p(mean)
+
+    # all of the following quantities are "per-gene" here
+    df = pd.DataFrame()
+    df['means'] = mean
+    df['dispersions'] = dispersion
+    df['mean_bin'] = pd.cut(df['means'], bins=20)
+    disp_grouped = df.groupby('mean_bin')['dispersions']
+    disp_mean_bin = disp_grouped.mean()
+    disp_std_bin = disp_grouped.std(ddof=1)
+    # retrieve those genes that have nan std, these are the ones where
+    # only a single gene fell in the bin and implicitly set them to have
+    # a normalized disperion of 1
+    one_gene_per_bin = disp_std_bin.isnull()
+    disp_std_bin[one_gene_per_bin.values] = disp_mean_bin[
+        one_gene_per_bin.values
+    ].values
+    disp_mean_bin[one_gene_per_bin.values] = 0
+    # actually do the normalization
+    df['dispersions_norm'] = (
+        df['dispersions'].values  # use values here as index differs
+        - disp_mean_bin[df['mean_bin'].values].values
+    ) / disp_std_bin[df['mean_bin'].values].values
+    return df.means.values, df.dispersions_norm.values
 
 def calculate_neighbor_radius(
     spot_meta, sample_size=1000, target_n_neighbors=10, margin=10, r_min=1, r_max=1000
@@ -120,7 +155,7 @@ def preprocessing_counts(
                 keep_cells = np.logical_and(keep_cells, ~crit)
             else:
                 keep_genes = ~crit.values
-    filtered_counts = counts.iloc[keep_cells.values, keep_genes]
+    filtered_counts = counts.loc[keep_cells, keep_genes]
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
@@ -132,6 +167,7 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
             cpm.loc[cells].T,
             metric="correlation",
         )[0]
+        corr = corr[corr>0]
         pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
         pathway_name = g + "_correlated_genes"
     else:
@@ -155,22 +191,41 @@ def contruct_pathways(
             print(
                 "{} features is not provided, use gene modules as pathways.".format(pathway_type)
             )
-            # calculate clusters
-            pathway_exp = cpm.loc[
-                cells,
-            ]
+            # Get gene modules
+            
+            pathway_exp = cpm.loc[cells,:]
+            # Remove genes with all 0s
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
-            # add an expression level cutoff to reduce the number of genes
-            top_expressed_genes = pathway_exp.mean().sort_values()[
-                -(max(int(pathway_exp.shape[1] / 4), 500)) :
-            ]
-            pathway_exp = pathway_exp[top_expressed_genes.index]
+            
+            # Calculate normalized dispersion and use it as cutoff
+            mean, ndisp = cal_norm_dispersion(pathway_exp)
+            top_expressed_genes = (mean>=0.05) & (ndisp>0.05)
+
+            pathway_exp = pathway_exp.loc[:,top_expressed_genes].copy()
+            pathway_exp.loc[:,:] = scale(pathway_exp) # zscoring
+            # correlation distance cutoff at 0.15
             gene_clusters = AgglomerativeClustering(
-                50, affinity="correlation", linkage="complete"
-            ).fit_predict(robust_scale(pathway_exp.T))
+                None,
+                affinity='correlation',
+                linkage="complete", 
+                distance_threshold=0.85,
+                ).fit_predict(pathway_exp.T)
+            
+            # clean up clusters, removing singleton and big clusters
+            vc = pd.Series(gene_clusters).value_counts()
+            vc = vc.index[(vc>=5) & (vc<=100)]
+            # assign genes not in a valid cluster to cluster -1
+            gene_clusters = np.array([x if x in vc else -1 for x in gene_clusters])
+
             # construct sender_pathway
-            print("Cosntruct 50 {} pathways from gene modules".format(pathway_type))
+            n_c = np.unique(gene_clusters[gene_clusters!=-1]).shape[0]
+            print(
+                "Cosntruct {} {} pathways from gene modules".format(pathway_type,n_c)
+                )
             for cluster in np.unique(gene_clusters):
+                # ignore bad gene cluster -1
+                if cluster == -1:
+                    continue
                 gene_mask = gene_clusters == cluster
                 pathway_dict["module_" + str(cluster + 1)] = pathway_exp.columns[
                     gene_mask
@@ -240,7 +295,8 @@ if __name__ == "__main__":
             automatically decide which one to use based on the 'receiver/sender features' and \
             the 'corr_agg' toggle. Below are the four modes: \n\t\
             (1) No aggregation: The user either provides one or several single genes, \
-            for sending/receiving pathways. These will be used in the analysis directly; \n\t\
+            for sending/receiving pathways. These will be used in the analysis directly; \
+            These genes have to be positively correlated. \n\t\
             (2) Correlation-driven aggregation: The users will provide a list of single genes. \
             Each single gene will be expanded, in spacia internally, to a pathway, \
             based on highly positively correlated genes. The user will provide a correlation cutoff \
@@ -265,8 +321,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "spot_meta",
         help="Path for spot positional information, spots by features. TXT format. \
-            must have 'X', 'Y' columns for coordinates. 'cluster' columns is needed \
-            if running with '-rc' and '-sc' parameters. 'cluster' refers to the group designation of cells, \
+            must have 'X', 'Y' columns for coordinates. 'cell_type' columns is needed \
+            if running with '-rc' and '-sc' parameters. 'cell_type' refers to the group designation of cells, \
             e.g., type of cells. The user can specify which group of cells to use for spacia"
     )
 
@@ -294,7 +350,7 @@ if __name__ == "__main__":
         "-sf",
         type=str,
         default=None,
-        help="Sender gene(s). Can be: \
+        help="Sender gene(s). At least two pathways are recommended. Can be: \
             1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
             otherwise mode (2); \
             2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
@@ -360,7 +416,7 @@ if __name__ == "__main__":
         "-rc",
         type=str,
         default=None,
-        help="Name of receiver cluster, must be in spot_metadata.",
+        help="Name of receiver cell_type, must be in spot_metadata.",
     )
 
     parser.add_argument(
@@ -368,7 +424,7 @@ if __name__ == "__main__":
         "-sc",
         type=str,
         default=None,
-        help="Name of sender cluster, must be in spot_metadata.",
+        help="Name of sender cell_type, must be in spot_metadata.",
     )
 
     parser.add_argument(
@@ -421,11 +477,20 @@ if __name__ == "__main__":
     #     [
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt',
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt',
-    #     'FGFR1',
     #     '-o', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test',
     #     '-rc', 'C_1',
     #     '-sc', 'C_2',
     #     '-cf', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test/input/input_cells.csv',
+    #     ]
+    # )
+    
+    # args = parser.parse_args(
+    #     [
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
+    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
+    #     '-rc', 'Tumor_epithelial_cells', 
+    #     '-sc', 'Fibroblasts',
     #     ]
     # )
 
@@ -485,7 +550,14 @@ if __name__ == "__main__":
     print('Processing expression counts.')
     counts = pd.read_csv(counts, index_col=0, sep="\t")
     spot_meta = pd.read_csv(spot_meta, index_col=0, sep="\t")
-    cpm = preprocessing_counts(counts)
+    if not all(x in spot_meta.columns for x in ['X','Y','cell_type']):
+        raise ValueError(
+            "Metadata must have ['X','Y','cell_type'] columns!"
+        )
+    if counts.max().max() > 100:
+        cpm = preprocessing_counts(counts)
+    else:
+        cpm = counts
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
 
     # find candidate receiver and sender cells
@@ -499,8 +571,8 @@ if __name__ == "__main__":
         )
     )
     if (sender_cluster is not None) & (sender_cluster is not None):
-        r_cells = spot_meta[spot_meta.cluster == receiver_cluster].index
-        s_cells = spot_meta[spot_meta.cluster == sender_cluster].index
+        r_cells = spot_meta[spot_meta.cell_type == receiver_cluster].index
+        s_cells = spot_meta[spot_meta.cell_type == sender_cluster].index
     elif cellid_file is not None:
         cellids = pd.read_csv(cellid_file, header=None)
         r_cells = cellids.iloc[:, 0].dropna().values
@@ -689,3 +761,4 @@ if __name__ == "__main__":
     # Remove model_input files
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
+# %%
