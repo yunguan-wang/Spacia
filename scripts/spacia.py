@@ -483,6 +483,16 @@ if __name__ == "__main__":
     #     '-cf', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test/input/input_cells.csv',
     #     ]
     # )
+    
+    # args = parser.parse_args(
+    #     [
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
+    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
+    #     '-rc', 'Tumor_epithelial_cells', 
+    #     '-sc', 'Fibroblasts',
+    #     ]
+    # )
 
     ######## Setting up ########
     args = parser.parse_args()
@@ -544,7 +554,10 @@ if __name__ == "__main__":
         raise ValueError(
             "Metadata must have ['X','Y','cell_type'] columns!"
         )
-    cpm = preprocessing_counts(counts)
+    if counts.max().max() > 100:
+        cpm = preprocessing_counts(counts)
+    else:
+        cpm = counts
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
 
     # find candidate receiver and sender cells
@@ -748,3 +761,4 @@ if __name__ == "__main__":
     # Remove model_input files
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
+# %%
