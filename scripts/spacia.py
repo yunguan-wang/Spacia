@@ -208,7 +208,7 @@ def contruct_pathways(
                 None,
                 affinity='correlation',
                 linkage="complete", 
-                distance_threshold=0.85,
+                distance_threshold=0.9,
                 ).fit_predict(pathway_exp.T)
             
             # clean up clusters, removing singleton and big clusters
@@ -265,7 +265,7 @@ def contruct_pathways(
                     continue
                 pathway_genes, pathway_name = get_corr_agg_genes(
                     corr_agg, cpm, cells, g, top_corr_genes)
-                pathway_dict[pathway_name] = pathway_genes.tolist()
+                pathway_dict[pathway_name] = [g] + pathway_genes.tolist()
     return receiver_pathways, sender_pathways
 
 
@@ -612,10 +612,10 @@ if __name__ == "__main__":
     exp_sender_fn = os.path.join(intermediate_folder, "exp_sender.json")
     # Calculate each receiver sender pair distances
     dist_r2s = r2s_matrix.to_frame().apply(
-        lambda x: cdist(
+        lambda x: (cdist(
             spot_meta.loc[x.name, :"Y"].values.reshape(-1, 2),
             spot_meta.loc[x[0], :"Y"].values.reshape(-1, 2),
-        )[0].round(2),
+        )[0]/dist_cutoff).round(5), # normalize distance to 0-1
         axis=1,
     )
     sender_dist_dict = {}
@@ -635,13 +635,23 @@ if __name__ == "__main__":
     sender_pathway_exp = pd.DataFrame(
         index=sender_candidates, columns=sender_pathways.keys()
     )
+    # This is a walkaround for use case if there is only one sending pathway.
+    # The R code won't work in that case, thus added a trivial noise pathway.
+    if sender_pathway_exp.shape[1] == 1:
+        dummy_pathway = np.random.normal(
+            scale=0.01,
+            size=sender_pathway_exp.shape[0]
+            )
+        sender_pathway_exp['dummy'] = dummy_pathway
+        
     for key in sender_pathway_exp.columns:
         sender_pathway_exp[key] = scale(
             cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
         )
+        
     sender_exp = (
         r2s_matrix.to_frame()
-        .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(2).tolist(), axis=1)
+        .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(5).tolist(), axis=1)
         .to_dict()
     )
     with open(exp_sender_fn, "w") as fp:
@@ -719,9 +729,12 @@ if __name__ == "__main__":
     for fd in spacia_job_folders:
         job_id = fd.split('/')[-1]
         # aggregating beta for different receiver pathways
-        res_beta = pd.read_csv(
-            os.path.join(fd, job_id + "_beta.txt"), sep="\t"
-        ).mean()
+        try:
+            res_beta = pd.read_csv(
+                os.path.join(fd, job_id + "_beta.txt"), sep="\t").mean()
+        except:
+            print('{} failed without outputs!'.format(job_id))
+            continue
         res_beta = res_beta.reset_index()
         res_beta.index = [job_id] * res_beta.shape[0]
         res_beta.columns = ["Sender_pathway", "Beta"]
