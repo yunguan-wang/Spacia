@@ -635,6 +635,12 @@ if __name__ == "__main__":
     sender_pathway_exp = pd.DataFrame(
         index=sender_candidates, columns=sender_pathways.keys()
     )
+        
+    for key in sender_pathway_exp.columns:
+        sender_pathway_exp[key] = scale(
+            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
+        )
+        
     # This is a walkaround for use case if there is only one sending pathway.
     # The R code won't work in that case, thus added a trivial noise pathway.
     if sender_pathway_exp.shape[1] == 1:
@@ -643,11 +649,6 @@ if __name__ == "__main__":
             size=sender_pathway_exp.shape[0]
             )
         sender_pathway_exp['dummy'] = dummy_pathway
-        
-    for key in sender_pathway_exp.columns:
-        sender_pathway_exp[key] = scale(
-            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
-        )
         
     sender_exp = (
         r2s_matrix.to_frame()
