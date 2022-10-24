@@ -286,7 +286,17 @@ class StreamToLogger(object):
     def flush(self):
         pass
 
-
+def remove_outliers(betas):
+    outlier_rows = []
+    for col in betas:
+        cutoff_l = betas[col].mean() - 5* betas[col].std()
+        cutoff_2 = betas[col].mean() + 5* betas[col].std()
+        outlier_rows +=betas.index[
+            (betas[col]>cutoff_2) | (betas[col]<cutoff_l)
+            ].tolist()
+    outlier_rows = list(set(outlier_rows))
+    betas = betas[~betas.index.isin(outlier_rows)]
+    return betas
 #%%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -599,13 +609,6 @@ if __name__ == "__main__":
             the expression matrix, please modify the input and try again.')
         raise ValueError()
         
-    for pathway_dict, fn in zip(
-        [receiver_pathways, sender_pathways],
-        ["receiver_pathways.json", "sender_pathways.json"],
-    ):
-        with open(os.path.join(intermediate_folder, fn), "w") as fp:
-            json.dump(pathway_dict, fp) # Save receiver and sender pathways
-
     print('Writing spacia_job.R inputs to the model_input folder.')
     dist_sender_fn = os.path.join(intermediate_folder, "dist_sender.json")
     metadata_fn = os.path.join(intermediate_folder, "metadata.txt")
@@ -621,15 +624,12 @@ if __name__ == "__main__":
     sender_dist_dict = {}
     for i in dist_r2s.index:
         sender_dist_dict[i] = dist_r2s[i].tolist()
-    with open(dist_sender_fn, "w") as fp:
-        json.dump(sender_dist_dict, fp)
 
     # contruct and save metadata
     meta_data = spot_meta.loc[receiver_candidates, :"Y"]
     meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
     meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
     meta_data = meta_data.append(meta_data_senders)
-    meta_data.to_csv(metadata_fn, sep='\t')
 
     # contruct and save sender exp
     sender_pathway_exp = pd.DataFrame(
@@ -641,23 +641,39 @@ if __name__ == "__main__":
             cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
         )
         
-    # This is a walkaround for use case if there is only one sending pathway.
-    # The R code won't work in that case, thus added a trivial noise pathway.
-    if sender_pathway_exp.shape[1] == 1:
-        dummy_pathway = np.random.normal(
-            scale=0.01,
-            size=sender_pathway_exp.shape[0]
-            )
-        sender_pathway_exp['dummy'] = dummy_pathway
+    # Add one dummy pathway as control
+    dummy_pathway = np.random.normal(
+        scale=0.01,
+        size=sender_pathway_exp.shape[0]
+    )
+    sender_pathway_exp['dummy'] = dummy_pathway
         
     sender_exp = (
         r2s_matrix.to_frame()
         .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(5).tolist(), axis=1)
         .to_dict()
     )
+    
+    # Writing spacia R job inputs common for each receiver pathways
+    # job metadata
+    meta_data.to_csv(metadata_fn, sep='\t')
+    
+    # sender distance and expression json (list of lists)
+    with open(dist_sender_fn, "w") as fp:
+        json.dump(sender_dist_dict, fp)
+        
     with open(exp_sender_fn, "w") as fp:
         json.dump(sender_exp, fp)
-
+        
+    # Save receiver and sender pathways for reference
+    sender_pathways['dummy'] = [] # add dummy pathway 
+    for pathway_dict, fn in zip(
+        [receiver_pathways, sender_pathways],
+        ["receiver_pathways.json", "sender_pathways.json"],
+    ):
+        with open(os.path.join(intermediate_folder, fn), "w") as fp:
+            json.dump(pathway_dict, fp) 
+            
     ######## Write spacia_job.R jobs ########
     # construct receiver expression and the job commands
     spacia_jobs = []
@@ -731,14 +747,22 @@ if __name__ == "__main__":
         job_id = fd.split('/')[-1]
         # aggregating beta for different receiver pathways
         try:
-            res_beta = pd.read_csv(
-                os.path.join(fd, job_id + "_beta.txt"), sep="\t").mean()
+            res_beta = pd.read_csv(os.path.join(fd, job_id + "_beta.txt"), sep="\t")
+            res_beta = remove_outliers(res_beta)
+            res_beta = res_beta.apply(lambda x: x/x.std()).mean()
         except:
             print('{} failed without outputs!'.format(job_id))
             continue
         res_beta = res_beta.reset_index()
         res_beta.index = [job_id] * res_beta.shape[0]
         res_beta.columns = ["Sender_pathway", "Beta"]
+        
+        # no longer needed
+        # # Fix an issue where there is only one sender pathway and the sender_exp
+        # # has a dummy pathway expression.
+        # if len(sender_pathways_names) == 1:
+        #     sender_pathways_names = list(sender_pathways_names) + ['dummy']
+            
         res_beta.Sender_pathway = sender_pathways_names
         pathways = pathways.append(res_beta)
 
