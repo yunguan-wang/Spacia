@@ -11,8 +11,12 @@
 #' plot_interaction(receiving_pathway_path, sending_pathway="all")
 #' plot_interaction(receiving_pathway_path, sending_pathway="1")
 #' 
-plot_interaction <- function(receiving_pathway_path,
-                             sending_pathway) {   
+plot_interaction <- function(
+    metadata_path,
+    exp_receiver_path, 
+    exp_sender_path, 
+    beta_path,
+    sending_pathway) {   
     
     library(rjson)
 
@@ -21,12 +25,7 @@ plot_interaction <- function(receiving_pathway_path,
         color = col2rgb(col)
         rgb(color[1],color[2],color[3],max=255,alpha=transparency*255)
     }
-    
-    prior_path = setwd(receiving_pathway_path)
-    metadata_path = "simulation_metadata.txt"
-    exp_receiver_path = "exp_receiver.csv"
-    exp_sender_path = "exp_sender.json"
-    beta_path = "_beta.txt"
+
     sender_col='brown2'
     receiver_col='dodgerblue1'
     interaction_col='springgreen2'
@@ -121,6 +120,5 @@ plot_interaction <- function(receiving_pathway_path,
 
     
     par(mar=Pmargin)
-    setwd(prior_path)
 }
 

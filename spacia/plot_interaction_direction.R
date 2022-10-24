@@ -4,7 +4,7 @@
 #' @param img_path a character value indicating the image path
 #' @param coordinates a data.frame for cell coordinates, where each row represents a cell, with pixel_x and pixel_y indicating the coordinates
 #' @param interaction a data frame for cell-cell interaction
-#' @param x_scale a numeric value indicating the augmentation scale value relative to original image
+#' @param position_scale a numeric value indicating the augmentation scale value relative to original image
 #' @param sender_col a character value indicating the color of sender cells
 #' @param reciever_col a character value indicating the color of reciever cells
 #' @param interaction_col a character value indicating the color of arrows
@@ -30,13 +30,13 @@
 #' interaction = with(dist, data.frame( i=i, j=j, weight=runif(nrow(dist)) ) )
 #' 
 #' # plot cell-cell interaction
-#' plot_interaction_direction(img_path, interaction, coordinates,x_scale=1, 
+#' plot_interaction_direction(img_path, interaction, coordinates,position_scale=1, 
 #'                            sender_col='darkred', reciever_col='steelblue', interaction_col='darkgreen',
 #'                            image_alpha=0.5, cell_alpha=1, interaction_alpha=5, interaction_size=0.1)
 #' 
 #' 
 #' 
-plot_interaction_direction <- function( img_path, interaction, coordinates, x_scale=1, 
+plot_interaction_direction <- function( img_path, interaction, coordinates, position_scale=1, point_scale=1,
                                         sender_col='brown2', reciever_col='dodgerblue1', interaction_col='springgreen2',
                                         image_alpha=0.5, cell_alpha=1, interaction_alpha=5, interaction_size=0.1)
 {
@@ -62,17 +62,17 @@ plot_interaction_direction <- function( img_path, interaction, coordinates, x_sc
         
         xoff=0
         yoff=0 
-        xi = ( as.numeric(coordinates[i,"pixel_x"]) - xoff )*x_scale
-        yi = ( as.numeric(coordinates[i,"pixel_y"]) - yoff )*x_scale
-        xj = ( as.numeric(coordinates[j,"pixel_x"]) - xoff )*x_scale
-        yj = ( as.numeric(coordinates[j,"pixel_y"]) - yoff )*x_scale
+        xi = ( as.numeric(coordinates[i,1]) - xoff )*position_scale
+        yi = ( as.numeric(coordinates[i,2]) - yoff )*position_scale
+        xj = ( as.numeric(coordinates[j,1]) - xoff )*position_scale
+        yj = ( as.numeric(coordinates[j,2]) - yoff )*position_scale
         
         wij = weight[k]
         #cij = interaction$type[k]
         
-        points( xj, yj, pch=16, col=reciever_col, cex=cell_alpha )
+        points( xj, yj, pch=16*point_scale, col=reciever_col, cex=cell_alpha )
         arrows(xi , yi , xj, yj, col=interaction_col, length=interaction_size, lwd=interaction_alpha*wij )
-        points( xi, yi, pch=16, col=sender_col, cex=cell_alpha )
+        points( xi, yi, pch=16*point_scale, col=sender_col, cex=cell_alpha )
         
     }
     
@@ -83,8 +83,8 @@ calculate_cell_dist <- function(cells_on_spot, max_dist=Inf)
 {
     do.call(rbind, lapply( 1:nrow(cells_on_spot), function(i) {   
         cat(i,"\n")
-        d = sqrt( ( cells_on_spot[i, "pixel_x"] - cells_on_spot[, "pixel_x"])^2 + 
-                      ( cells_on_spot[i, "pixel_y"] - cells_on_spot[, "pixel_y"])^2 ) 
+        d = sqrt( ( cells_on_spot[i, 1] - cells_on_spot[, 1])^2 + 
+                      ( cells_on_spot[i, 2] - cells_on_spot[, 2])^2 ) 
         j = which(d<=max_dist)
         j = setdiff(j,i)
         res = NULL

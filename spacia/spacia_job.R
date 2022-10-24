@@ -58,8 +58,14 @@ nwarm = as.integer(args[7])
 nthin = as.integer(args[8])
 nchain = as.integer(args[9])
 output_path = args[10] # output path need to have '/' at the end
-plot_mcmc = as.logical(args[11])
-ext = args[12]
+plot_mcmc = as.logical(args[11]) # whether or not to plot diagnosis plots
+ext = args[12] # extension used for the ggsave. see BetaB2MCMCPlots.R
+# input for prior without breaking the other functions.
+if (is.na(args[13])) {
+  prior = 1
+} else {
+  prior = as.numeric(args[13])
+}
 thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
 
@@ -70,7 +76,7 @@ sourceCpp(paste(spacia_path,"Fun_MICProB_C2Cinter.cpp", sep=''))
 source(paste(spacia_path,'MICProB_MIL_C2Cinter.R', sep=''))
 source(paste(spacia_path,'MIL_wrapper.R', sep=''))
 source(paste(spacia_path,'BetaB2MCMCPlots.R', sep=''))
-
+print('Depdendencies are successfully loaded.')
 ######## format input into proper formats ########
 
 # Read receiver matrix
@@ -93,7 +99,7 @@ set.seed(0)
 t0 = Sys.time()
 res = MIL_C2Cinter(
   exp_receiver, dist_sender, exp_sender, 
-  ntotal, nwarm, nthin, nchain, thetas)
+  ntotal, nwarm, nthin, nchain, thetas, prior)
 t1 = Sys.time()
 print(t1-t0)
 # Get memory use
@@ -110,14 +116,6 @@ for (n in names(res)) {
           res[n], paste(output_path, job_id,'_',n,'.txt', sep=''), sep='\t')
     }
 }
-# Debug purpose tests
-# need to see a high positive correlation here
-# plot(beta,colMeans(res$beta))
-# cor(beta,colMeans(res$beta))
-# 
-# plot(beta[1:10],colMeans(res$beta)[1:10])
-# cor(beta[1:10],colMeans(res$beta)[1:10])
-
 
 ########### Plot MCMC Diagnostics ##############
 if (plot_mcmc) {

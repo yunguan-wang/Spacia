@@ -229,6 +229,14 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--prior",
+    "-p",
+    type = str,
+    default = 1,
+    help="Prior for b and beta",
+)
+
+parser.add_argument(
     "--spath",
     "-s",
     type = str,
@@ -243,6 +251,7 @@ num_primary_beta = args.num_primary_beta
 noise_level = args.noise_level
 ntotal = args.ntotal
 spacia_path = args.spath
+prior = args.prior
 
 # setting up output folder
 if noise_level is None:
@@ -316,6 +325,9 @@ for n in ntotal:
         str(nthin),
         str(nchain),
         spacia_output_path + '/',
+        'T',
+        'pdf',
+        prior
         ]
         )
     )

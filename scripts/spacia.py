@@ -1,6 +1,6 @@
 """
 # TODO: Fillme
-
+# TODO: make coord linux friendly
 Dependency
 ----------
 R >= 4.0.2
@@ -25,11 +25,12 @@ import logging
 import csv
 import json
 from multiprocessing import Pool
+from matplotlib.pyplot import xlabel
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
-from sklearn.preprocessing import robust_scale
+from sklearn.preprocessing import robust_scale, scale
 
 
 def spacia_worker(cmd):
@@ -41,6 +42,40 @@ def spacia_worker(cmd):
     # os.system('rm -f {}'.format(' '.join(spacia_job_inputs)))
     return
 
+def cal_norm_dispersion(cts):
+    '''
+    Adapted from Scanpy _highly_variable_genes_single_batch.
+    https://github.com/theislab/scanpy/blob/f7279f6342f1e4a340bae2a8d345c1c43b2097bb/scanpy/preprocessing/_highly_variable_genes.py
+    '''
+    mean, var = cts.mean(),  cts.std()
+    mean[mean == 0] = 1e-12  # set entries equal to zero to small value
+    dispersion = var / mean
+    dispersion[dispersion == 0] = np.nan
+    dispersion = np.log(dispersion)
+    mean = np.log1p(mean)
+
+    # all of the following quantities are "per-gene" here
+    df = pd.DataFrame()
+    df['means'] = mean
+    df['dispersions'] = dispersion
+    df['mean_bin'] = pd.cut(df['means'], bins=20)
+    disp_grouped = df.groupby('mean_bin')['dispersions']
+    disp_mean_bin = disp_grouped.mean()
+    disp_std_bin = disp_grouped.std(ddof=1)
+    # retrieve those genes that have nan std, these are the ones where
+    # only a single gene fell in the bin and implicitly set them to have
+    # a normalized disperion of 1
+    one_gene_per_bin = disp_std_bin.isnull()
+    disp_std_bin[one_gene_per_bin.values] = disp_mean_bin[
+        one_gene_per_bin.values
+    ].values
+    disp_mean_bin[one_gene_per_bin.values] = 0
+    # actually do the normalization
+    df['dispersions_norm'] = (
+        df['dispersions'].values  # use values here as index differs
+        - disp_mean_bin[df['mean_bin'].values].values
+    ) / disp_std_bin[df['mean_bin'].values].values
+    return df.means.values, df.dispersions_norm.values
 
 def calculate_neighbor_radius(
     spot_meta, sample_size=1000, target_n_neighbors=10, margin=10, r_min=1, r_max=1000
@@ -100,6 +135,8 @@ def preprocessing_counts(
     n_cells = np.sum(counts > 0, axis=0)
     keep_cells = np.zeros(shape=[counts.shape[0]], dtype=bool)
     keep_cells[:] = True
+    keep_genes = np.zeros(shape=[counts.shape[1]], dtype=bool)
+    keep_genes[:] = True
     for i, df, cutoff, qc_type in zip(
         [0, 0, 1],
         [n_total, n_genes, n_cells],
@@ -117,8 +154,8 @@ def preprocessing_counts(
             if i == 0:
                 keep_cells = np.logical_and(keep_cells, ~crit)
             else:
-                keep_genes = ~crit
-    filtered_counts = counts.iloc[keep_cells.values, keep_genes.values]
+                keep_genes = ~crit.values
+    filtered_counts = counts.loc[keep_cells, keep_genes]
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
@@ -130,8 +167,9 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
             cpm.loc[cells].T,
             metric="correlation",
         )[0]
+        corr = corr[corr>0]
         pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
-        pathway_name = g + "_correlated genes"
+        pathway_name = g + "_correlated_genes"
     else:
         logging.warning("Correlation aggregation is turned off and \
             this pathway has only one gene. This is not recommended.")
@@ -151,24 +189,43 @@ def contruct_pathways(
         cells  = receiver_candidates if pathway_type == "Receiver" else sender_candidates
         if pathway_features is None:
             print(
-                "{} features is not provides, use gene modules as sender pathways.".format(pathway_type)
+                "{} features is not provided, use gene modules as pathways.".format(pathway_type)
             )
-            # calculate clusters
-            pathway_exp = cpm.loc[
-                cells,
-            ]
+            # Get gene modules
+            
+            pathway_exp = cpm.loc[cells,:]
+            # Remove genes with all 0s
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
-            # add an expression level cutoff to reduce the number of genes
-            top_expressed_genes = pathway_exp.mean().sort_values()[
-                -int(pathway_exp.shape[1] / 4) :
-            ]
-            pathway_exp = pathway_exp[top_expressed_genes.index]
+            
+            # Calculate normalized dispersion and use it as cutoff
+            mean, ndisp = cal_norm_dispersion(pathway_exp)
+            top_expressed_genes = (mean>=0.05) & (ndisp>0.05)
+
+            pathway_exp = pathway_exp.loc[:,top_expressed_genes].copy()
+            pathway_exp.loc[:,:] = scale(pathway_exp) # zscoring
+            # correlation distance cutoff at 0.15
             gene_clusters = AgglomerativeClustering(
-                50, affinity="correlation", linkage="complete"
-            ).fit_predict(robust_scale(pathway_exp.T))
+                None,
+                affinity='correlation',
+                linkage="complete", 
+                distance_threshold=0.9,
+                ).fit_predict(pathway_exp.T)
+            
+            # clean up clusters, removing singleton and big clusters
+            vc = pd.Series(gene_clusters).value_counts()
+            vc = vc.index[(vc>=5) & (vc<=100)]
+            # assign genes not in a valid cluster to cluster -1
+            gene_clusters = np.array([x if x in vc else -1 for x in gene_clusters])
+
             # construct sender_pathway
-            print("Cosntruct 50 {} pathways from gene modules".format(pathway_type))
+            n_c = np.unique(gene_clusters[gene_clusters!=-1]).shape[0]
+            print(
+                "Cosntruct {} {} pathways from gene modules".format(pathway_type,n_c)
+                )
             for cluster in np.unique(gene_clusters):
+                # ignore bad gene cluster -1
+                if cluster == -1:
+                    continue
                 gene_mask = gene_clusters == cluster
                 pathway_dict["module_" + str(cluster + 1)] = pathway_exp.columns[
                     gene_mask
@@ -208,7 +265,7 @@ def contruct_pathways(
                     continue
                 pathway_genes, pathway_name = get_corr_agg_genes(
                     corr_agg, cpm, cells, g, top_corr_genes)
-                pathway_dict[pathway_name] = pathway_genes.tolist()
+                pathway_dict[pathway_name] = [g] + pathway_genes.tolist()
     return receiver_pathways, sender_pathways
 
 
@@ -229,7 +286,17 @@ class StreamToLogger(object):
     def flush(self):
         pass
 
-
+def remove_outliers(betas):
+    outlier_rows = []
+    for col in betas:
+        cutoff_l = betas[col].mean() - 5* betas[col].std()
+        cutoff_2 = betas[col].mean() + 5* betas[col].std()
+        outlier_rows +=betas.index[
+            (betas[col]>cutoff_2) | (betas[col]<cutoff_l)
+            ].tolist()
+    outlier_rows = list(set(outlier_rows))
+    betas = betas[~betas.index.isin(outlier_rows)]
+    return betas
 #%%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -238,7 +305,8 @@ if __name__ == "__main__":
             automatically decide which one to use based on the 'receiver/sender features' and \
             the 'corr_agg' toggle. Below are the four modes: \n\t\
             (1) No aggregation: The user either provides one or several single genes, \
-            for sending/receiving pathways. These will be used in the analysis directly; \n\t\
+            for sending/receiving pathways. These will be used in the analysis directly; \
+            These genes have to be positively correlated. \n\t\
             (2) Correlation-driven aggregation: The users will provide a list of single genes. \
             Each single gene will be expanded, in spacia internally, to a pathway, \
             based on highly positively correlated genes. The user will provide a correlation cutoff \
@@ -256,15 +324,15 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "counts",
-        help="Path for gene expression data, spots by genes, normalized. \
+        help="Path for gene expression data, spots by genes, raw counts. \
             TXT format",
     )
 
     parser.add_argument(
         "spot_meta",
         help="Path for spot positional information, spots by features. TXT format. \
-            must have 'X', 'Y' columns for coordinates. 'cluster' columns is needed \
-            if running with '-rc' and '-sc' parameters. 'cluster' refers to the group designation of cells, \
+            must have 'X', 'Y' columns for coordinates. 'cell_type' columns is needed \
+            if running with '-rc' and '-sc' parameters. 'cell_type' refers to the group designation of cells, \
             e.g., type of cells. The user can specify which group of cells to use for spacia"
     )
 
@@ -292,7 +360,7 @@ if __name__ == "__main__":
         "-sf",
         type=str,
         default=None,
-        help="Sender gene(s). Can be: \
+        help="Sender gene(s). At least two pathways are recommended. Can be: \
             1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
             otherwise mode (2); \
             2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
@@ -348,7 +416,7 @@ if __name__ == "__main__":
         "--mcmc_params",
         "-m",
         type=str,
-        default="50000,20000,100,1",
+        default="50000,20000,100,2",
         help="MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}",
     )
 
@@ -358,7 +426,7 @@ if __name__ == "__main__":
         "-rc",
         type=str,
         default=None,
-        help="Name of receiver cluster, must be in spot_metadata.",
+        help="Name of receiver cell_type, must be in spot_metadata.",
     )
 
     parser.add_argument(
@@ -366,7 +434,7 @@ if __name__ == "__main__":
         "-sc",
         type=str,
         default=None,
-        help="Name of sender cluster, must be in spot_metadata.",
+        help="Name of sender cell_type, must be in spot_metadata.",
     )
 
     parser.add_argument(
@@ -384,7 +452,7 @@ if __name__ == "__main__":
         "-k",
         action="store_false",
         default=True,
-        help="Whether the intermediate folder should be deleted.",
+        help="Whether the model_input folder should be deleted.",
     )
 
     parser.add_argument(
@@ -397,17 +465,42 @@ if __name__ == "__main__":
             another gene in the receiver cells.",
     )
 
+    parser.add_argument (
+        "--plot_mcmc",
+        action = "store_true",
+        default = False,
+        help = "Optional argument for plotting b and beta’s trace plots, density plots, \
+         autocorrelation plots, and PSRF plots."
+    )
+
+    parser.add_argument (
+        "--ext",
+        type = str,
+        default = 'pdf',
+        help = "File formats for the mcmc plots to be saved.Can either be a device function \
+         (e.g. png), or one of eps, ps, tex (pictex), pdf, jpeg, tiff, png, bmp, svg or wmf (windows only)"
+    )
+
     ######## Setting up ########
     # Debug params
     # args = parser.parse_args(
     #     [
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt',
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt',
-    #     'FGFR1',
     #     '-o', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test',
     #     '-rc', 'C_1',
     #     '-sc', 'C_2',
     #     '-cf', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test/input/input_cells.csv',
+    #     ]
+    # )
+    
+    # args = parser.parse_args(
+    #     [
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
+    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
+    #     '-rc', 'Tumor_epithelial_cells', 
+    #     '-sc', 'Fibroblasts',
     #     ]
     # )
 
@@ -430,8 +523,10 @@ if __name__ == "__main__":
     corr_agg = args.corr_agg
     ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
     keep = args.keep_intermediate
+    plot_mcmc = 'T' if args.plot_mcmc else 'F'
+    ext = args.ext
 
-    intermediate_folder = os.path.join(output_path, "intermediate")
+    intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
         os.makedirs(intermediate_folder)
 
@@ -465,7 +560,14 @@ if __name__ == "__main__":
     print('Processing expression counts.')
     counts = pd.read_csv(counts, index_col=0, sep="\t")
     spot_meta = pd.read_csv(spot_meta, index_col=0, sep="\t")
-    cpm = preprocessing_counts(counts)
+    if not all(x in spot_meta.columns for x in ['X','Y','cell_type']):
+        raise ValueError(
+            "Metadata must have ['X','Y','cell_type'] columns!"
+        )
+    if counts.max().max() > 100:
+        cpm = preprocessing_counts(counts)
+    else:
+        cpm = counts
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
 
     # find candidate receiver and sender cells
@@ -479,8 +581,8 @@ if __name__ == "__main__":
         )
     )
     if (sender_cluster is not None) & (sender_cluster is not None):
-        r_cells = spot_meta[spot_meta.cluster == receiver_cluster].index
-        s_cells = spot_meta[spot_meta.cluster == sender_cluster].index
+        r_cells = spot_meta[spot_meta.cell_type == receiver_cluster].index
+        s_cells = spot_meta[spot_meta.cell_type == sender_cluster].index
     elif cellid_file is not None:
         cellids = pd.read_csv(cellid_file, header=None)
         r_cells = cellids.iloc[:, 0].dropna().values
@@ -507,52 +609,71 @@ if __name__ == "__main__":
             the expression matrix, please modify the input and try again.')
         raise ValueError()
         
-    for pathway_dict, fn in zip(
-        [receiver_pathways, sender_pathways],
-        ["receiver_pathways.json", "sender_pathways.json"],
-    ):
-        with open(os.path.join(intermediate_folder, fn), "w") as fp:
-            json.dump(pathway_dict, fp) # Save receiver and sender pathways
-
-    print('Writing spacia_job.R inputs to the intermediate folder.')
+    print('Writing spacia_job.R inputs to the model_input folder.')
     dist_sender_fn = os.path.join(intermediate_folder, "dist_sender.json")
-    metadata_fn = os.path.join(intermediate_folder, "metadata.csv")
+    metadata_fn = os.path.join(intermediate_folder, "metadata.txt")
     exp_sender_fn = os.path.join(intermediate_folder, "exp_sender.json")
     # Calculate each receiver sender pair distances
     dist_r2s = r2s_matrix.to_frame().apply(
-        lambda x: cdist(
+        lambda x: (cdist(
             spot_meta.loc[x.name, :"Y"].values.reshape(-1, 2),
             spot_meta.loc[x[0], :"Y"].values.reshape(-1, 2),
-        )[0].round(2),
+        )[0]/dist_cutoff).round(5), # normalize distance to 0-1
         axis=1,
     )
     sender_dist_dict = {}
     for i in dist_r2s.index:
         sender_dist_dict[i] = dist_r2s[i].tolist()
-    with open(dist_sender_fn, "w") as fp:
-        json.dump(sender_dist_dict, fp)
 
     # contruct and save metadata
     meta_data = spot_meta.loc[receiver_candidates, :"Y"]
     meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
-    meta_data.to_csv(metadata_fn, sep="\t")
+    meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
+    meta_data = meta_data.append(meta_data_senders)
 
     # contruct and save sender exp
     sender_pathway_exp = pd.DataFrame(
         index=sender_candidates, columns=sender_pathways.keys()
     )
+        
     for key in sender_pathway_exp.columns:
-        sender_pathway_exp[key] = (
-            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1).values
+        sender_pathway_exp[key] = scale(
+            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
         )
+        
+    # Add one dummy pathway as control
+    dummy_pathway = np.random.normal(
+        scale=0.01,
+        size=sender_pathway_exp.shape[0]
+    )
+    sender_pathway_exp['dummy'] = dummy_pathway
+        
     sender_exp = (
         r2s_matrix.to_frame()
-        .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(2).tolist(), axis=1)
+        .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(5).tolist(), axis=1)
         .to_dict()
     )
+    
+    # Writing spacia R job inputs common for each receiver pathways
+    # job metadata
+    meta_data.to_csv(metadata_fn, sep='\t')
+    
+    # sender distance and expression json (list of lists)
+    with open(dist_sender_fn, "w") as fp:
+        json.dump(sender_dist_dict, fp)
+        
     with open(exp_sender_fn, "w") as fp:
         json.dump(sender_exp, fp)
-
+        
+    # Save receiver and sender pathways for reference
+    sender_pathways['dummy'] = [] # add dummy pathway 
+    for pathway_dict, fn in zip(
+        [receiver_pathways, sender_pathways],
+        ["receiver_pathways.json", "sender_pathways.json"],
+    ):
+        with open(os.path.join(intermediate_folder, fn), "w") as fp:
+            json.dump(pathway_dict, fp) 
+            
     ######## Write spacia_job.R jobs ########
     # construct receiver expression and the job commands
     spacia_jobs = []
@@ -588,6 +709,8 @@ if __name__ == "__main__":
                     str(nthin),
                     str(nchain),
                     spacia_output_path + "/",
+                    plot_mcmc,
+                    ext,
                 ]
             )
         )
@@ -601,7 +724,7 @@ if __name__ == "__main__":
     with Pool(16) as p:
         _ = p.map(spacia_worker, spacia_jobs)
     
-    # Collect all results
+    ######## Collect all results ########
     print('Collecting results.')
     meta_data = pd.read_csv(metadata_fn, index_col=0, sep="\t")
     with open(os.path.join(intermediate_folder, "sender_pathways.json"), "r") as f:
@@ -623,12 +746,23 @@ if __name__ == "__main__":
     for fd in spacia_job_folders:
         job_id = fd.split('/')[-1]
         # aggregating beta for different receiver pathways
-        res_beta = pd.read_csv(
-            os.path.join(fd, job_id + "_beta.txt"), sep="\t"
-        ).mean()
+        try:
+            res_beta = pd.read_csv(os.path.join(fd, job_id + "_beta.txt"), sep="\t")
+            res_beta = remove_outliers(res_beta)
+            res_beta = res_beta.apply(lambda x: x/x.std()).mean()
+        except:
+            print('{} failed without outputs!'.format(job_id))
+            continue
         res_beta = res_beta.reset_index()
         res_beta.index = [job_id] * res_beta.shape[0]
         res_beta.columns = ["Sender_pathway", "Beta"]
+        
+        # no longer needed
+        # # Fix an issue where there is only one sender pathway and the sender_exp
+        # # has a dummy pathway expression.
+        # if len(sender_pathways_names) == 1:
+        #     sender_pathways_names = list(sender_pathways_names) + ['dummy']
+            
         res_beta.Sender_pathway = sender_pathways_names
         pathways = pathways.append(res_beta)
 
@@ -662,6 +796,7 @@ if __name__ == "__main__":
         interactions.to_csv(os.path.join(output_path, "Interactions.csv"))
         b_plus_fdr.to_csv(os.path.join(output_path, "B_and_FDR.csv"))
     
-    # Remove intermediate files
+    # Remove model_input files
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
+# %%
