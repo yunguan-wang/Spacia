@@ -31,7 +31,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import robust_scale, scale
-
+from sklearn.decomposition import PCA
 
 def spacia_worker(cmd):
     """
@@ -187,7 +187,28 @@ def contruct_pathways(
         ["Receiver", "Sender"],
     ):
         cells  = receiver_candidates if pathway_type == "Receiver" else sender_candidates
-        if pathway_features is None:
+        if pathway_features == 'pca':
+            pathway_exp = cpm.loc[cells,:]
+            # Remove genes with all 0s
+            pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
+            # Calculate normalized dispersion and use it as cutoff
+            pca = PCA(20).fit(pathway_exp)
+            pcc = pca.components_
+            pcc = pd.DataFrame(
+                pcc,
+                index = ['PC_' + str(i+1) for i in range(pcc.shape[0])],
+                columns = pathway_exp.columns
+                )
+            pcc = pcc.apply(lambda x: x/x.std())
+            pathway_exp_pca = pd.DataFrame(
+                pca.transform(pathway_exp),
+                index = pathway_exp.index,
+                columns = ['PC_' + str(i+1) for i in range(pcc.shape[0])]
+            )
+            pathway_dict[pathway_type + '_pc'] = pcc
+            pathway_dict[pathway_type + '_y'] = pathway_exp_pca
+            
+        elif pathway_features is None:
             print(
                 "{} features is not provided, use gene modules as pathways.".format(pathway_type)
             )
@@ -230,8 +251,7 @@ def contruct_pathways(
                 pathway_dict["module_" + str(cluster + 1)] = pathway_exp.columns[
                     gene_mask
                 ].tolist()
-            continue
-        if pathway_features[-4:] == ".csv":
+        elif pathway_features[-4:] == ".csv":
             print("Cosntruct {} pathways from file...".format(pathway_type))
             with open(pathway_features) as csvfile:
                 spamreader = csv.reader(csvfile, delimiter=",")
@@ -371,6 +391,8 @@ if __name__ == "__main__":
             the first column contains pathway names. Spacia will run in mode (3) if \
             the pathway contains multiple genes. If there is only one gene in the pathway,\
             spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
+            5) if 'pca' is provided as input, use transform data using top 20 principle \
+            components and use each component as a sender pathway. \
             5) if nothing is passed, spacia will run in mode (4).",
     )
 
@@ -381,7 +403,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dist_cutoff",
         "-d",
-        type=str,
+        type=float,
         default=None,
         help="Distance cutoff for finding potential interacting cells.",
     )
@@ -499,8 +521,9 @@ if __name__ == "__main__":
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
     #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
-    #     '-rc', 'Tumor_epithelial_cells', 
+    #     '-rc', 'Tumor epithelial cells', 
     #     '-sc', 'Fibroblasts',
+    #     '-sf', 'pca'
     #     ]
     # )
 
@@ -564,6 +587,7 @@ if __name__ == "__main__":
         raise ValueError(
             "Metadata must have ['X','Y','cell_type'] columns!"
         )
+    # TODO: added a tag to allow normalization
     if counts.max().max() > 100:
         cpm = preprocessing_counts(counts)
     else:
@@ -580,6 +604,11 @@ if __name__ == "__main__":
             n_neighbors, dist_cutoff
         )
     )
+    # catch error where a wrong cell cluster name is provided.
+    for c_name in [receiver_cluster, sender_cluster]:
+        if c_name not in spot_meta.cell_type.unique():
+            raise ValueError('{} not found in cell types!'.format(spot_meta))
+        
     if (sender_cluster is not None) & (sender_cluster is not None):
         r_cells = spot_meta[spot_meta.cell_type == receiver_cluster].index
         s_cells = spot_meta[spot_meta.cell_type == sender_cluster].index
@@ -601,7 +630,7 @@ if __name__ == "__main__":
     ######## Preparing spacia_job.R inputs ########
     # Contruct sender and receiver pathways
     receiver_pathways, sender_pathways = contruct_pathways(
-        cpm, receiver_candidates, sender_candidates, receiver_features, sender_features
+        cpm, receiver_candidates, sender_candidates, receiver_features, sender_features,
     )
     # If no receiver pathways are found, abort.
     if len(receiver_pathways.keys()) == 0:
@@ -632,14 +661,17 @@ if __name__ == "__main__":
     meta_data = meta_data.append(meta_data_senders)
 
     # contruct and save sender exp
-    sender_pathway_exp = pd.DataFrame(
-        index=sender_candidates, columns=sender_pathways.keys()
-    )
-        
-    for key in sender_pathway_exp.columns:
-        sender_pathway_exp[key] = scale(
-            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
-        )
+    if sender_features == 'pca':
+        sender_pathway_exp = sender_pathways['Sender_y']
+#TODO: continue here
+    else:
+        sender_pathway_exp = pd.DataFrame(
+            index=sender_candidates, columns=sender_pathways.keys()
+        )  
+        for key in sender_pathway_exp.columns:
+            sender_pathway_exp[key] = scale(
+                cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
+            )
         
     # Add one dummy pathway as control
     dummy_pathway = np.random.normal(
@@ -671,6 +703,13 @@ if __name__ == "__main__":
         [receiver_pathways, sender_pathways],
         ["receiver_pathways.json", "sender_pathways.json"],
     ):
+        if (fn == "sender_pathways.json") & (sender_features == 'pca'):
+            pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
+            sender_pathways['Sender_pc'].to_csv(pc_fn)
+            # prepare dummy sender_pathway.json for pca mode
+            pathway_dict = pd.DataFrame(index=sender_pathways['Sender_pc'].index)
+            pathway_dict = pathway_dict.to_dict(orient='index')
+
         with open(os.path.join(intermediate_folder, fn), "w") as fp:
             json.dump(pathway_dict, fp) 
             
