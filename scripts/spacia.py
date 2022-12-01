@@ -159,25 +159,35 @@ def preprocessing_counts(
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
-def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
+def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes, agg_method):
     if corr_agg:
         print('Constructing pathway using correlation aggregation')
-        corr = cdist(
+        corr = 1-cdist(
             cpm.loc[cells, g].values.reshape(1, -1),
             cpm.loc[cells].T,
             metric="correlation",
         )[0]
-        corr = corr[corr>0]
-        pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
+        pathway_genes = pd.Series(corr, cpm.columns)
+        if agg_method == 'simple':
+            pathway_genes = pathway_genes[pathway_genes>0]
+            pathway_genes = pathway_genes.sort_values(ascending=False)[:top_corr_genes]
+        else:
+            pathway_genes = abs(pathway_genes)
+            pathway_genes = pathway_genes.sort_values(ascending=False)[:top_corr_genes]
         pathway_name = g + "_correlated_genes"
     else:
         logging.warning("Correlation aggregation is turned off and \
             this pathway has only one gene. This is not recommended.")
         pathway_name = g
-    return pathway_genes, pathway_name
+    return pathway_genes.index, pathway_name
 
 def contruct_pathways(
-    cpm, receiver_candidates, sender_candidates, receiver_features, sender_features,
+    cpm,
+    receiver_candidates,
+    sender_candidates,
+    receiver_features,
+    sender_features,
+    agg_method,
 ):
     receiver_pathways = {}
     sender_pathways = {}
@@ -268,7 +278,7 @@ def contruct_pathways(
                             print("{} not found in expression data.".format(g))
                             continue
                         pathway_genes, pathway_name = get_corr_agg_genes(
-                            corr_agg, cpm, cells, g, top_corr_genes)
+                            corr_agg, cpm, cells, g, top_corr_genes, agg_method)
                     else:
                         continue # just to handle blank lines
                     pathway_dict[pathway_name] = pathway_genes
@@ -284,8 +294,8 @@ def contruct_pathways(
                     print("{} not found in expression data.".format(g))
                     continue
                 pathway_genes, pathway_name = get_corr_agg_genes(
-                    corr_agg, cpm, cells, g, top_corr_genes)
-                pathway_dict[pathway_name] = [g] + pathway_genes.tolist()
+                    corr_agg, cpm, cells, g, top_corr_genes, agg_method)
+                pathway_dict[pathway_name] = pathway_genes.tolist()
     return receiver_pathways, sender_pathways
 
 
@@ -393,7 +403,7 @@ if __name__ == "__main__":
             spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
             5) if 'pca' is provided as input, use transform data using top 20 principle \
             components and use each component as a sender pathway. \
-            5) if nothing is passed, spacia will run in mode (4).",
+            6) if nothing is passed, spacia will run in mode (4).",
     )
 
     parser.add_argument(
@@ -458,6 +468,14 @@ if __name__ == "__main__":
         default=None,
         help="Name of sender cell_type, must be in spot_metadata.",
     )
+    
+    parser.add_argument(
+        "--bag_size",
+        "-b",
+        type=int,
+        default=1,
+        help="Minimal bag size for sender cells.",
+    )
 
     parser.add_argument(
         "--cellid_file",
@@ -485,6 +503,15 @@ if __name__ == "__main__":
         help="This is a toggle to turn off correlation based aggregation. If it is \
             turned off, spacia evaluate the effect of one gene in the sender cells on \
             another gene in the receiver cells.",
+    )
+    
+    parser.add_argument(
+        "--corr_agg_method",
+        "-cm",
+        default='simple', # simple or weighted
+        help="How the receiver gene expression will be aggregated, if 'simple', top positively \
+            correlated genes will be averages. If 'weighted', top correlated genes by absolute \
+            correlation will be summed into the seed genes expression using weighted averages",
     )
 
     parser.add_argument (
@@ -548,7 +575,13 @@ if __name__ == "__main__":
     keep = args.keep_intermediate
     plot_mcmc = 'T' if args.plot_mcmc else 'F'
     ext = args.ext
+    corr_agg_method = args.corr_agg_method
+    bag_size = args.bag_size
 
+    # Checking inputs
+    assert corr_agg_method in ['simple','weighted'], \
+        f"'corr_agg_method' must be either 'simple' or 'weighted'!"  
+    
     intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
         os.makedirs(intermediate_folder)
@@ -630,7 +663,12 @@ if __name__ == "__main__":
     ######## Preparing spacia_job.R inputs ########
     # Contruct sender and receiver pathways
     receiver_pathways, sender_pathways = contruct_pathways(
-        cpm, receiver_candidates, sender_candidates, receiver_features, sender_features,
+        cpm, 
+        receiver_candidates, 
+        sender_candidates, 
+        receiver_features, 
+        sender_features,
+        corr_agg_method,
     )
     # If no receiver pathways are found, abort.
     if len(receiver_pathways.keys()) == 0:
@@ -663,7 +701,6 @@ if __name__ == "__main__":
     # contruct and save sender exp
     if sender_features == 'pca':
         sender_pathway_exp = sender_pathways['Sender_y']
-#TODO: continue here
     else:
         sender_pathway_exp = pd.DataFrame(
             index=sender_candidates, columns=sender_pathways.keys()
@@ -707,7 +744,8 @@ if __name__ == "__main__":
             pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
             sender_pathways['Sender_pc'].to_csv(pc_fn)
             # prepare dummy sender_pathway.json for pca mode
-            pathway_dict = pd.DataFrame(index=sender_pathways['Sender_pc'].index)
+            pathway_dict = pd.DataFrame(
+                index=sender_pathways['Sender_pc'].index.tolist() + ['dummy'])
             pathway_dict = pathway_dict.to_dict(orient='index')
 
         with open(os.path.join(intermediate_folder, fn), "w") as fp:
@@ -725,7 +763,14 @@ if __name__ == "__main__":
         )
         # Getting receiver exp
         rp_genes = receiver_pathways[rp]
-        receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
+        if corr_agg_method == 'simple':
+            receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
+        else:
+            corr = cpm.loc[receiver_candidates, rp_genes].corr()[rp.split('_')[0]]
+            receiver_exp = np.matmul(
+                cpm.loc[receiver_candidates, rp_genes],
+                corr)
+#! TODO: Continue here
         receiver_exp = receiver_exp > receiver_exp.quantile(receiver_exp_cutoff)
         receiver_exp = receiver_exp + 0
         receiver_exp.to_csv(exp_receiver_fn, header=None, index=None)
@@ -839,3 +884,12 @@ if __name__ == "__main__":
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
 # %%
+# import matplotlib.pyplot as plt
+# test = cpm.loc[receiver_candidates]
+# genes = test.mean().sort_values(ascending=False).index[:50]
+# _, ax = plt.subplots(10,5, figsize = (20,40))
+# ax = ax.ravel()
+# for i, g in enumerate(genes):
+#     ax[i].hist(test[g], bins=30)
+#     ax[i].set_title(g)
+# # %%
