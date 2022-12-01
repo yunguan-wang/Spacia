@@ -25,12 +25,13 @@ import logging
 import csv
 import json
 from multiprocessing import Pool
-from matplotlib.pyplot import xlabel
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import robust_scale, scale
+from sklearn.mixture import GaussianMixture
 
 
 def spacia_worker(cmd):
@@ -168,12 +169,12 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
             metric="correlation",
         )[0]
         corr = corr[corr>0]
-        pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]]
+        pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]].tolist()
         pathway_name = g + "_correlated_genes"
     else:
-        logging.warning("Correlation aggregation is turned off and \
-            this pathway has only one gene. This is not recommended.")
+        logging.warning("Correlation aggregation is turned off and this pathway has only one gene. This is not recommended.")
         pathway_name = g
+        pathway_genes = [g]
     return pathway_genes, pathway_name
 
 def contruct_pathways(
@@ -265,7 +266,7 @@ def contruct_pathways(
                     continue
                 pathway_genes, pathway_name = get_corr_agg_genes(
                     corr_agg, cpm, cells, g, top_corr_genes)
-                pathway_dict[pathway_name] = [g] + pathway_genes.tolist()
+                pathway_dict[pathway_name] = pathway_genes
     return receiver_pathways, sender_pathways
 
 
@@ -381,7 +382,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dist_cutoff",
         "-d",
-        type=str,
+        type=float,
         default=None,
         help="Distance cutoff for finding potential interacting cells.",
     )
@@ -389,9 +390,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--receiver_exp_cutoff",
         "-rec",
-        type=float,
+        type=str,
         default=0.5,
-        help="Quantile cutoff used to threshold receiver expression.",
+        help="Quantile cutoff used to threshold receiver expression. If 'auto', a bimodel \
+            distribution will be fitted to find the cutoff.",
     )
 
     parser.add_argument(
@@ -469,8 +471,15 @@ if __name__ == "__main__":
         "--plot_mcmc",
         action = "store_true",
         default = False,
-        help = "Optional argument for plotting b and beta’s trace plots, density plots, \
+        help = "Optional argument for plotting b and beta's trace plots, density plots, \
          autocorrelation plots, and PSRF plots."
+    )
+    
+    parser.add_argument (
+        "--debug_plots",
+        action = "store_true",
+        default = False,
+        help = "Optional argument for making debug plots for exp_receiver cutoff selection."
     )
 
     parser.add_argument (
@@ -482,28 +491,19 @@ if __name__ == "__main__":
     )
 
     ######## Setting up ########
-    # Debug params
-    # args = parser.parse_args(
-    #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt',
-    #     '-o', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test',
-    #     '-rc', 'C_1',
-    #     '-sc', 'C_2',
-    #     '-cf', '/endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test/input/input_cells.csv',
-    #     ]
-    # )
+    # Debug param
     
     # args = parser.parse_args(
     #     [
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
     #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
-    #     '-rc', 'Tumor_epithelial_cells', 
+    #     '-rc', 'Tumor epithelial cells', 
     #     '-sc', 'Fibroblasts',
+    #     '-d', '30',
     #     ]
     # )
-
+#%%
     ######## Setting up ########
     args = parser.parse_args()
     counts = args.counts
@@ -519,12 +519,14 @@ if __name__ == "__main__":
     top_corr_genes = args.num_corr_genes
     dist_cutoff = args.dist_cutoff
     receiver_exp_cutoff = args.receiver_exp_cutoff
+    receiver_exp_cutoff = receiver_exp_cutoff if receiver_exp_cutoff == 'auto' else float(receiver_exp_cutoff)
     mcmc_params = args.mcmc_params
     corr_agg = args.corr_agg
     ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
     keep = args.keep_intermediate
     plot_mcmc = 'T' if args.plot_mcmc else 'F'
     ext = args.ext
+    plot_debug = args.debug_plots
 
     intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
@@ -575,10 +577,10 @@ if __name__ == "__main__":
         dist_cutoff = calculate_neighbor_radius(
             spot_meta.iloc[:, :2], target_n_neighbors=n_neighbors
         )
-    print(
-        "Maximal distance for {} expected neighbors is {:.2f}".format(
-            n_neighbors, dist_cutoff
-        )
+        print(
+            "Maximal distance for {} expected neighbors is {:.2f}".format(
+                n_neighbors, dist_cutoff
+            )
     )
     if (sender_cluster is not None) & (sender_cluster is not None):
         r_cells = spot_meta[spot_meta.cell_type == receiver_cluster].index
@@ -687,7 +689,25 @@ if __name__ == "__main__":
         # Getting receiver exp
         rp_genes = receiver_pathways[rp]
         receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
-        receiver_exp = receiver_exp > receiver_exp.quantile(receiver_exp_cutoff)
+        
+        if (receiver_exp_cutoff == 'auto') & (len(rp) ==1):
+            gm = GaussianMixture(n_components=2, random_state=0).fit(
+                receiver_exp.values.reshape(-1,1))
+            m1, m2 = gm.means_.flatten()
+            sd1, sd2 = 2*np.sqrt(gm.covariances_.flatten())
+            if m2-1.5*sd2 <= m1+1.5*sd1:
+                print('{} expression is likely not bimodal!'.format(rp[0]))
+            else:
+                cutoff = (m1+m2)/2
+        else:
+            cutoff = receiver_exp.quantile(0.5)
+        if plot_debug:
+            receiver_exp.hist(bins=20,density=True)
+            plt.plot((cutoff,cutoff), (0,2))
+            plt.savefig(
+                os.path.join(intermediate_folder, job_id + "_exp_receiver_dist.pdf"))
+            
+        receiver_exp = receiver_exp > cutoff
         receiver_exp = receiver_exp + 0
         receiver_exp.to_csv(exp_receiver_fn, header=None, index=None)
 
