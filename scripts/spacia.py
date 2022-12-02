@@ -32,7 +32,7 @@ from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import robust_scale, scale
 from sklearn.mixture import GaussianMixture
-
+from sklearn.decomposition import PCA
 
 def spacia_worker(cmd):
     """
@@ -160,16 +160,20 @@ def preprocessing_counts(
     filtered_cpm = filtered_counts.apply(lambda x: 1e4 * x / x.sum(), axis=1)
     return filtered_cpm
 
-def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
+def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes, agg_method):
     if corr_agg:
         print('Constructing pathway using correlation aggregation')
-        corr = cdist(
+        corr = 1-cdist(
             cpm.loc[cells, g].values.reshape(1, -1),
             cpm.loc[cells].T,
             metric="correlation",
         )[0]
-        corr = corr[corr>0]
-        pathway_genes = cpm.columns[np.argsort(corr)[:top_corr_genes]].tolist()
+        pathway_genes = pd.Series(corr, cpm.columns)
+        if agg_method == 'simple':
+            pathway_genes = pathway_genes[pathway_genes>0]
+        else:
+            pathway_genes = abs(pathway_genes)
+        pathway_genes = pathway_genes.sort_values(ascending=False)[:top_corr_genes].tolist()
         pathway_name = g + "_correlated_genes"
     else:
         logging.warning("Correlation aggregation is turned off and this pathway has only one gene. This is not recommended.")
@@ -178,7 +182,12 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes):
     return pathway_genes, pathway_name
 
 def contruct_pathways(
-    cpm, receiver_candidates, sender_candidates, receiver_features, sender_features,
+    cpm,
+    receiver_candidates,
+    sender_candidates,
+    receiver_features,
+    sender_features,
+    agg_method,
 ):
     receiver_pathways = {}
     sender_pathways = {}
@@ -188,7 +197,28 @@ def contruct_pathways(
         ["Receiver", "Sender"],
     ):
         cells  = receiver_candidates if pathway_type == "Receiver" else sender_candidates
-        if pathway_features is None:
+        if pathway_features == 'pca':
+            pathway_exp = cpm.loc[cells,:]
+            # Remove genes with all 0s
+            pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
+            # Calculate normalized dispersion and use it as cutoff
+            pca = PCA(20).fit(pathway_exp)
+            pcc = pca.components_
+            pcc = pd.DataFrame(
+                pcc,
+                index = ['PC_' + str(i+1) for i in range(pcc.shape[0])],
+                columns = pathway_exp.columns
+                )
+            pcc = pcc.apply(lambda x: x/x.std())
+            pathway_exp_pca = pd.DataFrame(
+                pca.transform(pathway_exp),
+                index = pathway_exp.index,
+                columns = ['PC_' + str(i+1) for i in range(pcc.shape[0])]
+            )
+            pathway_dict[pathway_type + '_pc'] = pcc
+            pathway_dict[pathway_type + '_y'] = pathway_exp_pca
+            
+        elif pathway_features is None:
             print(
                 "{} features is not provided, use gene modules as pathways.".format(pathway_type)
             )
@@ -231,8 +261,7 @@ def contruct_pathways(
                 pathway_dict["module_" + str(cluster + 1)] = pathway_exp.columns[
                     gene_mask
                 ].tolist()
-            continue
-        if pathway_features[-4:] == ".csv":
+        elif pathway_features[-4:] == ".csv":
             print("Cosntruct {} pathways from file...".format(pathway_type))
             with open(pathway_features) as csvfile:
                 spamreader = csv.reader(csvfile, delimiter=",")
@@ -249,7 +278,7 @@ def contruct_pathways(
                             print("{} not found in expression data.".format(g))
                             continue
                         pathway_genes, pathway_name = get_corr_agg_genes(
-                            corr_agg, cpm, cells, g, top_corr_genes)
+                            corr_agg, cpm, cells, g, top_corr_genes, agg_method)
                     else:
                         continue # just to handle blank lines
                     pathway_dict[pathway_name] = pathway_genes
@@ -372,7 +401,9 @@ if __name__ == "__main__":
             the first column contains pathway names. Spacia will run in mode (3) if \
             the pathway contains multiple genes. If there is only one gene in the pathway,\
             spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
-            5) if nothing is passed, spacia will run in mode (4).",
+            5) if 'pca' is provided as input, use transform data using top 20 principle \
+            components and use each component as a sender pathway. \
+            6) if nothing is passed, spacia will run in mode (4).",
     )
 
     parser.add_argument(
@@ -438,6 +469,14 @@ if __name__ == "__main__":
         default=None,
         help="Name of sender cell_type, must be in spot_metadata.",
     )
+    
+    parser.add_argument(
+        "--bag_size",
+        "-b",
+        type=int,
+        default=1,
+        help="Minimal bag size for sender cells.",
+    )
 
     parser.add_argument(
         "--cellid_file",
@@ -465,6 +504,15 @@ if __name__ == "__main__":
         help="This is a toggle to turn off correlation based aggregation. If it is \
             turned off, spacia evaluate the effect of one gene in the sender cells on \
             another gene in the receiver cells.",
+    )
+    
+    parser.add_argument(
+        "--corr_agg_method",
+        "-cm",
+        default='simple', # simple or weighted
+        help="How the receiver gene expression will be aggregated, if 'simple', top positively \
+            correlated genes will be averages. If 'weighted', top correlated genes by absolute \
+            correlation will be summed into the seed genes expression using weighted averages",
     )
 
     parser.add_argument (
@@ -501,6 +549,7 @@ if __name__ == "__main__":
     #     '-rc', 'Tumor epithelial cells', 
     #     '-sc', 'Fibroblasts',
     #     '-d', '30',
+    #     '-sf', 'pca'
     #     ]
     # )
 #%%
@@ -527,7 +576,13 @@ if __name__ == "__main__":
     plot_mcmc = 'T' if args.plot_mcmc else 'F'
     ext = args.ext
     plot_debug = args.debug_plots
+    corr_agg_method = args.corr_agg_method
+    bag_size = args.bag_size
 
+    # Checking inputs
+    assert corr_agg_method in ['simple','weighted'], \
+        f"'corr_agg_method' must be either 'simple' or 'weighted'!"  
+    
     intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
         os.makedirs(intermediate_folder)
@@ -566,6 +621,7 @@ if __name__ == "__main__":
         raise ValueError(
             "Metadata must have ['X','Y','cell_type'] columns!"
         )
+    # TODO: added a tag to allow normalization
     if counts.max().max() > 100:
         cpm = preprocessing_counts(counts)
     else:
@@ -582,6 +638,11 @@ if __name__ == "__main__":
                 n_neighbors, dist_cutoff
             )
     )
+    # catch error where a wrong cell cluster name is provided.
+    for c_name in [receiver_cluster, sender_cluster]:
+        if c_name not in spot_meta.cell_type.unique():
+            raise ValueError('{} not found in cell types!'.format(spot_meta))
+        
     if (sender_cluster is not None) & (sender_cluster is not None):
         r_cells = spot_meta[spot_meta.cell_type == receiver_cluster].index
         s_cells = spot_meta[spot_meta.cell_type == sender_cluster].index
@@ -603,7 +664,12 @@ if __name__ == "__main__":
     ######## Preparing spacia_job.R inputs ########
     # Contruct sender and receiver pathways
     receiver_pathways, sender_pathways = contruct_pathways(
-        cpm, receiver_candidates, sender_candidates, receiver_features, sender_features
+        cpm, 
+        receiver_candidates, 
+        sender_candidates, 
+        receiver_features, 
+        sender_features,
+        corr_agg_method,
     )
     # If no receiver pathways are found, abort.
     if len(receiver_pathways.keys()) == 0:
@@ -634,14 +700,16 @@ if __name__ == "__main__":
     meta_data = meta_data.append(meta_data_senders)
 
     # contruct and save sender exp
-    sender_pathway_exp = pd.DataFrame(
-        index=sender_candidates, columns=sender_pathways.keys()
-    )
-        
-    for key in sender_pathway_exp.columns:
-        sender_pathway_exp[key] = scale(
-            cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
-        )
+    if sender_features == 'pca':
+        sender_pathway_exp = sender_pathways['Sender_y']
+    else:
+        sender_pathway_exp = pd.DataFrame(
+            index=sender_candidates, columns=sender_pathways.keys()
+        )  
+        for key in sender_pathway_exp.columns:
+            sender_pathway_exp[key] = scale(
+                cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
+            )
         
     # Add one dummy pathway as control
     dummy_pathway = np.random.normal(
@@ -673,6 +741,14 @@ if __name__ == "__main__":
         [receiver_pathways, sender_pathways],
         ["receiver_pathways.json", "sender_pathways.json"],
     ):
+        if (fn == "sender_pathways.json") & (sender_features == 'pca'):
+            pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
+            sender_pathways['Sender_pc'].to_csv(pc_fn)
+            # prepare dummy sender_pathway.json for pca mode
+            pathway_dict = pd.DataFrame(
+                index=sender_pathways['Sender_pc'].index.tolist() + ['dummy'])
+            pathway_dict = pathway_dict.to_dict(orient='index')
+
         with open(os.path.join(intermediate_folder, fn), "w") as fp:
             json.dump(pathway_dict, fp) 
             
@@ -688,19 +764,28 @@ if __name__ == "__main__":
         )
         # Getting receiver exp
         rp_genes = receiver_pathways[rp]
-        receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
-        
+        # aggregate gene expression
+        if corr_agg_method == 'simple':
+            receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
+        else:
+            corr = cpm.loc[receiver_candidates, rp_genes].corr()[rp.split('_')[0]]
+            receiver_exp = np.matmul(
+                cpm.loc[receiver_candidates, rp_genes],corr
+                )
+        # Decide receiver exp cutoff
         if (receiver_exp_cutoff == 'auto') & (len(rp) ==1):
             gm = GaussianMixture(n_components=2, random_state=0).fit(
                 receiver_exp.values.reshape(-1,1))
             m1, m2 = gm.means_.flatten()
             sd1, sd2 = 2*np.sqrt(gm.covariances_.flatten())
             if m2-1.5*sd2 <= m1+1.5*sd1:
+                # If not bimodal, use median
                 print('{} expression is likely not bimodal!'.format(rp[0]))
+                cutoff = receiver_exp.quantile(0.5)
             else:
                 cutoff = (m1+m2)/2
         else:
-            cutoff = receiver_exp.quantile(0.5)
+            cutoff = receiver_exp.quantile(receiver_exp_cutoff)
         if plot_debug:
             receiver_exp.hist(bins=20,density=True)
             plt.plot((cutoff,cutoff), (0,2))
@@ -820,3 +905,12 @@ if __name__ == "__main__":
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
 # %%
+# import matplotlib.pyplot as plt
+# test = cpm.loc[receiver_candidates]
+# genes = test.mean().sort_values(ascending=False).index[:50]
+# _, ax = plt.subplots(10,5, figsize = (20,40))
+# ax = ax.ravel()
+# for i, g in enumerate(genes):
+#     ax[i].hist(test[g], bins=30)
+#     ax[i].set_title(g)
+# # %%
