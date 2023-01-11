@@ -294,7 +294,7 @@ def contruct_pathways(
                     print("{} not found in expression data.".format(g))
                     continue
                 pathway_genes, pathway_name = get_corr_agg_genes(
-                    corr_agg, cpm, cells, g, top_corr_genes)
+                    corr_agg, cpm, cells, g, top_corr_genes, agg_method)
                 pathway_dict[pathway_name] = pathway_genes
     return receiver_pathways, sender_pathways
 
@@ -449,7 +449,7 @@ if __name__ == "__main__":
         "--mcmc_params",
         "-m",
         type=str,
-        default="50000,20000,100,2",
+        default="50000,25000,10,3",
         help="MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}",
     )
 
@@ -543,13 +543,16 @@ if __name__ == "__main__":
     
     # args = parser.parse_args(
     #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stitched.txt',
     #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
     #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
     #     '-rc', 'Tumor epithelial cells', 
     #     '-sc', 'Fibroblasts',
     #     '-d', '30',
-    #     '-sf', 'pca'
+    #     '-sf', 'pca',
+    #     '--corr_agg',
+    #     '-rec', 'auto'
+        
     #     ]
     # )
 #%%
@@ -597,6 +600,7 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
         level="INFO",
     )
+    print(args)
 
     # getting script path for supporting codes.
     spacia_path = os.path.abspath(__file__)
@@ -658,6 +662,14 @@ if __name__ == "__main__":
     r2s_matrix = find_sender_candidates(
         r_cells, s_cells, spot_meta[["X", "Y"]], dist_cutoff
     )
+    receiver_cell_for_cutoff = r2s_matrix.index.tolist()
+    print('Limiting bags to those with at least {} sender cells'.format(bag_size))
+    r2s_matrix = r2s_matrix[r2s_matrix.apply(len) >= bag_size]
+    if r2s_matrix.shape[0] < 500:
+        raise ValueError('Number of total bags is too small, job killed.')
+    elif r2s_matrix.shape[0]> 5000:
+        print('Subsampled 5000 bags for Spacia.')
+        r2s_matrix = r2s_matrix.sample(5000, replace=False)
     sender_candidates = list(set(r2s_matrix.sum()))
     receiver_candidates = r2s_matrix.index.tolist()
 
@@ -711,12 +723,12 @@ if __name__ == "__main__":
                 cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
             )
         
-    # Add one dummy pathway as control
-    dummy_pathway = np.random.normal(
-        scale=0.01,
-        size=sender_pathway_exp.shape[0]
-    )
-    sender_pathway_exp['dummy'] = dummy_pathway
+    # # Add one dummy pathway as control
+    # dummy_pathway = np.random.normal(
+    #     scale=0.01,
+    #     size=sender_pathway_exp.shape[0]
+    # )
+    # sender_pathway_exp['dummy'] = dummy_pathway
         
     sender_exp = (
         r2s_matrix.to_frame()
@@ -724,34 +736,6 @@ if __name__ == "__main__":
         .to_dict()
     )
     
-    # Writing spacia R job inputs common for each receiver pathways
-    # job metadata
-    meta_data.to_csv(metadata_fn, sep='\t')
-    
-    # sender distance and expression json (list of lists)
-    with open(dist_sender_fn, "w") as fp:
-        json.dump(sender_dist_dict, fp)
-        
-    with open(exp_sender_fn, "w") as fp:
-        json.dump(sender_exp, fp)
-        
-    # Save receiver and sender pathways for reference
-    sender_pathways['dummy'] = [] # add dummy pathway 
-    for pathway_dict, fn in zip(
-        [receiver_pathways, sender_pathways],
-        ["receiver_pathways.json", "sender_pathways.json"],
-    ):
-        if (fn == "sender_pathways.json") & (sender_features == 'pca'):
-            pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
-            sender_pathways['Sender_pc'].to_csv(pc_fn)
-            # prepare dummy sender_pathway.json for pca mode
-            pathway_dict = pd.DataFrame(
-                index=sender_pathways['Sender_pc'].index.tolist() + ['dummy'])
-            pathway_dict = pathway_dict.to_dict(orient='index')
-
-        with open(os.path.join(intermediate_folder, fn), "w") as fp:
-            json.dump(pathway_dict, fp) 
-            
     ######## Write spacia_job.R jobs ########
     # construct receiver expression and the job commands
     spacia_jobs = []
@@ -766,34 +750,61 @@ if __name__ == "__main__":
         rp_genes = receiver_pathways[rp]
         # aggregate gene expression
         if corr_agg_method == 'simple':
-            receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
+            receiver_exp = cpm.loc[receiver_cell_for_cutoff, rp_genes].mean(axis=1)
         else:
-            corr = cpm.loc[receiver_candidates, rp_genes].corr()[rp.split('_')[0]]
+            corr = cpm.loc[receiver_cell_for_cutoff, rp_genes].corr()[rp.split('_')[0]]
             receiver_exp = np.matmul(
-                cpm.loc[receiver_candidates, rp_genes],corr
+                cpm.loc[receiver_cell_for_cutoff, rp_genes],corr
                 )
         # Decide receiver exp cutoff
-        if (receiver_exp_cutoff == 'auto') & (len(rp) ==1):
+        # Debug codes
+        print(receiver_exp.head())
+        print(receiver_exp_cutoff)
+        rf_to_drop = []
+        if receiver_exp_cutoff == 'auto':
+            print(
+                'Estimating {} expression cutoff by fitting a bimodal distribution...'.format(rp)
+                )
             gm = GaussianMixture(n_components=2, random_state=0).fit(
                 receiver_exp.values.reshape(-1,1))
+            labels = gm.predict(receiver_exp.values.reshape(-1,1))
+            # check bimodality and calculate cutoff
+            sd1 = receiver_exp[labels==0].std()
+            sd2 = receiver_exp[labels==1].std()
             m1, m2 = gm.means_.flatten()
-            sd1, sd2 = 2*np.sqrt(gm.covariances_.flatten())
-            if m2-1.5*sd2 <= m1+1.5*sd1:
+            if m1 > m2:
+                m1, m2 = m2, m1
+                sd1, sd2 = sd2, sd1
+            if m2-1*sd2 <= m1+1*sd1:
                 # If not bimodal, use median
-                print('{} expression is likely not bimodal!'.format(rp[0]))
-                cutoff = receiver_exp.quantile(0.5)
+                print('{} expression is likely not bimodal!'.format(rp))
+                print('Using m1 + 1sd cutoff value.')
+                cutoff = m1+1*sd1
             else:
                 cutoff = (m1+m2)/2
+                
+            # For pathways whose expression are very expreme, use median as cutoff
+            if (
+                (labels.sum() > 0.9 * receiver_exp.shape[0]) or 
+                (labels.sum() < 0.1 * receiver_exp.shape[0])
+            ):
+                # print('Receiver expression too extreme, job skipped')
+                print('Receiver expression maybe too extreme.')
+                # rf_to_drop.append(rp)
+                cutoff = receiver_exp.quantile(0.5)
         else:
             cutoff = receiver_exp.quantile(receiver_exp_cutoff)
+    
         if plot_debug:
             receiver_exp.hist(bins=20,density=True)
             plt.plot((cutoff,cutoff), (0,2))
             plt.savefig(
                 os.path.join(intermediate_folder, job_id + "_exp_receiver_dist.pdf"))
+            plt.close()
             
         receiver_exp = receiver_exp > cutoff
         receiver_exp = receiver_exp + 0
+        receiver_exp = receiver_exp[receiver_candidates]
         receiver_exp.to_csv(exp_receiver_fn, header=None, index=None)
 
         spacia_output_path = os.path.join(output_path, job_id)
@@ -822,7 +833,38 @@ if __name__ == "__main__":
     
     with open(os.path.join(output_path, 'spacia_r.log'), 'w') as f:
         f.write('\n'.join(spacia_jobs)) # Save the actual jobs for debug purpose
+        
+    # Save receiver and sender pathways for reference
+    # remove receiver genes from receiver pathway
+    # for key in rf_to_drop:
+    #     del receiver_pathways[key]
+    # sender_pathways['dummy'] = [] # add dummy pathway
+    for pathway_dict, fn in zip(
+        [receiver_pathways, sender_pathways],
+        ["receiver_pathways.json", "sender_pathways.json"],
+    ):
+        if (fn == "sender_pathways.json") & (sender_features == 'pca'):
+            pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
+            sender_pathways['Sender_pc'].to_csv(pc_fn)
+            # prepare dummy sender_pathway.json for pca mode
+            pathway_dict = pd.DataFrame(
+                index=sender_pathways['Sender_pc'].index.tolist())
+            pathway_dict = pathway_dict.to_dict(orient='index')
 
+        with open(os.path.join(intermediate_folder, fn), "w") as fp:
+            json.dump(pathway_dict, fp)
+            
+    # Writing spacia R job inputs common for each receiver pathways
+    # job metadata
+    meta_data.to_csv(metadata_fn, sep='\t')
+    
+    # sender distance and expression json (list of lists)
+    with open(dist_sender_fn, "w") as fp:
+        json.dump(sender_dist_dict, fp)
+        
+    with open(exp_sender_fn, "w") as fp:
+        json.dump(sender_exp, fp)
+    
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
     print('Running spacia_R MCMC MIL models.')
