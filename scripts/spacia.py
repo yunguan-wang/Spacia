@@ -105,21 +105,33 @@ def calculate_neighbor_radius(
     return r_next
 
 
-def find_sender_candidates(receivers, senders, locations, dist_cutoff=30):
+def find_sender_candidates(r_cells, s_cells, locations, dist_cutoff=30):
     """
-    receivers, senders: list of spot ids.
+    r_cells, s_cells: list of spot ids.
     locations: pd.DataFrame of X, Y locations
     """
+    # for r in r_cells:
+    #     dist_to_senders = cdist(
+    #         locations.loc[r].values.reshape(-1, 2),
+    #         locations.loc[s_cells].values.reshape(-1, 2),
+    #     )[0]
+    #     crit = dist_to_senders <= dist_cutoff
+    #     if crit.sum() == 0:
+    #         continue
+    #     pip[r] = s_cells[crit].tolist()
     pip = pd.Series(dtype=object)
-    for r in receivers:
-        dist_to_senders = cdist(
-            locations.loc[r].values.reshape(-1, 2),
-            locations.loc[senders].values.reshape(-1, 2),
-        )[0]
+    n_chunks = int(np.ceil(len(r_cells)/10000))
+    for c in range(n_chunks):
+        r_cells_chunk = r_cells[c*10000 : (c+1)*10000]
+        rl = locations.loc[r_cells_chunk].values.reshape(-1, 2)
+        sl = locations.loc[s_cells].values.reshape(-1, 2)
+        dist_to_senders = cdist(rl,sl)
         crit = dist_to_senders <= dist_cutoff
-        if crit.sum() == 0:
-            continue
-        pip[r] = senders[crit].tolist()
+        r_candidates = r_cells_chunk[crit.any(axis=1)]
+        crit = crit[crit.any(axis=1)]
+        _pip = pd.Series([s_cells[crit[i]].tolist() for i in range(len(crit))])
+        _pip.index = r_candidates
+        pip = pd.concat([pip, _pip])
     return pip
 
 
@@ -294,7 +306,7 @@ def contruct_pathways(
                     print("{} not found in expression data.".format(g))
                     continue
                 pathway_genes, pathway_name = get_corr_agg_genes(
-                    corr_agg, cpm, cells, g, top_corr_genes)
+                    corr_agg, cpm, cells, g, top_corr_genes, agg_method)
                 pathway_dict[pathway_name] = pathway_genes
     return receiver_pathways, sender_pathways
 
@@ -449,7 +461,7 @@ if __name__ == "__main__":
         "--mcmc_params",
         "-m",
         type=str,
-        default="50000,20000,100,2",
+        default="50000,25000,10,3",
         help="MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}",
     )
 
@@ -543,15 +555,33 @@ if __name__ == "__main__":
     
     # args = parser.parse_args(
     #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/sprod/denoised_stiched.txt',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanLungCancerPatient1/spacia_spot_meta.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/sprod/denoised_stitched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/spacia_spot_meta_yw.txt',
     #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
-    #     '-rc', 'Tumor epithelial cells', 
+    #     '-rc', 'Tumor_cells', 
     #     '-sc', 'Fibroblasts',
-    #     '-d', '30',
-    #     '-sf', 'pca'
+    #     '-n', '50',
+    #     '-sf', 'pca',
+    #     '--corr_agg',
+    #     '-rec', 'auto'
     #     ]
     # )
+    
+    # args = parser.parse_args(
+    #     [
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/sprod/denoised_stitched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/spacia_spot_meta_yw.txt',
+    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
+    #     '-rc', 'Tumor_cells', 
+    #     '-sc', 'Endothelial_cells',
+    #     '-rf', 'PLVAP,VWF,HLA.B,DUSP1,PECAM1,ENG,HLA.C,CTNNB1,MMRN2,INSR,TGFBR2,ITGB1,PKM,HLA.DRA,CDH5,ETS1,NFKBIA,CLEC14A,WWTR1,NOTCH1,KLF2,JUN,JUNB,COL4A1,NRP1,KDR,HLA.DRB1,EPHB4,PLA2G2A,ACTA2,FOS,BST2,STAT6,TAPBP,JAK1,CREBBP,HDAC1,GPX3,FLT4,CAV1,AKT1,EGR1,FLT1,STAT3,CLDN5,PTK2,RELA,MYC,THBD,LMNA,SOCS3,BRD4,TGFBR3,LRP5,BCL2L1,ZEB1,HLA.DMA,TGFB1,AKT3,NOS3,TAP2,SELP,HIF1A,IKBKB,TNFSF10,NFE2L2,ITGA5,YAP1,FN1,STING1,HLA.DPB1,CDKN1A,CIITA,IDH1,XBP1,COL1A1,CX3CL1,IL3RA,VEGFA,ICAM2,PDGFB,BMP1,MAML1,CEACAM1,MYH11,FGFR1,TCF7L2,DES,PREX2,AMOTL2,IFNGR1,VEGFC,TEAD1,CDKN1B,TBX3,CCND1,PDGFRB,NFKB1,ITGA1,CD40,NFKB2,ICAM1,LRP1,SOD2,IRF3,PDK4,CDK4,TP53,NF1,TEK,IFNGR2,RAF1,MET,VEGFB,LGALS9,VSIR,PPARD,SMAD2,BRAF,STAT5A,IFITM1,ELN,TEAD4,CDK6,ERBB2,KITLG,SHARPIN,ANGPT2,NEDD4,COL5A1,EPHA4,TGFB3,RB1,CSF1,CMKLR1,EPHA2,IGF1R,TGFB2,CEBPB,MLH1,HLA.DQA1,IFNAR2,LRP6,CDK2,MSH3,NDUFA4L2,ARAF,IFNAR1,TAP1,ACKR3,APC,EGFR,BAK1,HRAS,MSH6,CXCR4,STAT1,MAP2K1,HLA.DPA1,MMRN1,PTEN,AXIN2,BMI1,TGFBR1,PIK3CG,ATR,TMEM37,FBLN1,CD207,VCAM1,KRAS,SPRY2,TBK1,PIK3CA,BAX,CD276,CDH1,AKT2,NRAS,RGMB,CXCL16,HDAC3,MSH2,DIABLO,SFRP2,ATF3,LDHA,DNMT3A,SNAI2,RORC,TGFBI,BCL2,PCNA,ICAM3,CD14,ADAMTS4,SMOC2,CXCL12,TSC1,CSF3',
+    #     '-n', '50',
+    #     '-sf', 'pca',
+    #     '--corr_agg',
+    #     '-rec', 'auto'
+    #     ]
+    # )
+    
 #%%
     ######## Setting up ########
     args = parser.parse_args()
@@ -597,6 +627,7 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
         level="INFO",
     )
+    print(args)
 
     # getting script path for supporting codes.
     spacia_path = os.path.abspath(__file__)
@@ -658,6 +689,14 @@ if __name__ == "__main__":
     r2s_matrix = find_sender_candidates(
         r_cells, s_cells, spot_meta[["X", "Y"]], dist_cutoff
     )
+    receiver_cell_for_cutoff = r2s_matrix.index.tolist()
+    print('Limiting bags to those with at least {} sender cells'.format(bag_size))
+    r2s_matrix = r2s_matrix[r2s_matrix.apply(len) >= bag_size]
+    if r2s_matrix.shape[0] < 500:
+        raise ValueError('Number of total bags is too small, job killed.')
+    elif r2s_matrix.shape[0]> 5000:
+        print('Subsampled 5000 bags for Spacia.')
+        r2s_matrix = r2s_matrix.sample(5000, replace=False)
     sender_candidates = list(set(r2s_matrix.sum()))
     receiver_candidates = r2s_matrix.index.tolist()
 
@@ -711,12 +750,12 @@ if __name__ == "__main__":
                 cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
             )
         
-    # Add one dummy pathway as control
-    dummy_pathway = np.random.normal(
-        scale=0.01,
-        size=sender_pathway_exp.shape[0]
-    )
-    sender_pathway_exp['dummy'] = dummy_pathway
+    # # Add one dummy pathway as control
+    # dummy_pathway = np.random.normal(
+    #     scale=0.01,
+    #     size=sender_pathway_exp.shape[0]
+    # )
+    # sender_pathway_exp['dummy'] = dummy_pathway
         
     sender_exp = (
         r2s_matrix.to_frame()
@@ -724,41 +763,27 @@ if __name__ == "__main__":
         .to_dict()
     )
     
-    # Writing spacia R job inputs common for each receiver pathways
-    # job metadata
-    meta_data.to_csv(metadata_fn, sep='\t')
-    
-    # sender distance and expression json (list of lists)
-    with open(dist_sender_fn, "w") as fp:
-        json.dump(sender_dist_dict, fp)
-        
-    with open(exp_sender_fn, "w") as fp:
-        json.dump(sender_exp, fp)
-        
-    # Save receiver and sender pathways for reference
-    sender_pathways['dummy'] = [] # add dummy pathway 
-    for pathway_dict, fn in zip(
-        [receiver_pathways, sender_pathways],
-        ["receiver_pathways.json", "sender_pathways.json"],
-    ):
-        if (fn == "sender_pathways.json") & (sender_features == 'pca'):
-            pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
-            sender_pathways['Sender_pc'].to_csv(pc_fn)
-            # prepare dummy sender_pathway.json for pca mode
-            pathway_dict = pd.DataFrame(
-                index=sender_pathways['Sender_pc'].index.tolist() + ['dummy'])
-            pathway_dict = pathway_dict.to_dict(orient='index')
-
-        with open(os.path.join(intermediate_folder, fn), "w") as fp:
-            json.dump(pathway_dict, fp) 
-            
     ######## Write spacia_job.R jobs ########
     # construct receiver expression and the job commands
     spacia_jobs = []
     spacia_job_folders = []
     for rp in receiver_pathways.keys():
         job_id = rp
-        spacia_job_folders.append(os.path.join(output_path, job_id))
+        job_folder = os.path.join(output_path, job_id)
+        spacia_job_folders.append(job_folder)
+        
+        # Check if the current rp is already done
+        log_path = os.path.join(job_folder, job_id + '_log.txt')
+        job_finished = False
+        if os.path.exists(log_path):
+            with open(log_path, 'r') as f:
+                log = f.readlines()
+                job_finished = any(
+                    list(map(lambda x: 'Time difference' in x, log)))
+        if job_finished:
+            print(job_id, ' is already finished and will be skipped.')
+            continue
+        
         exp_receiver_fn = os.path.join(
             intermediate_folder, job_id + "_exp_receiver.csv"
         )
@@ -766,34 +791,61 @@ if __name__ == "__main__":
         rp_genes = receiver_pathways[rp]
         # aggregate gene expression
         if corr_agg_method == 'simple':
-            receiver_exp = cpm.loc[receiver_candidates, rp_genes].mean(axis=1)
+            receiver_exp = cpm.loc[receiver_cell_for_cutoff, rp_genes].mean(axis=1)
         else:
-            corr = cpm.loc[receiver_candidates, rp_genes].corr()[rp.split('_')[0]]
+            corr = cpm.loc[receiver_cell_for_cutoff, rp_genes].corr()[rp.split('_')[0]]
             receiver_exp = np.matmul(
-                cpm.loc[receiver_candidates, rp_genes],corr
+                cpm.loc[receiver_cell_for_cutoff, rp_genes],corr
                 )
         # Decide receiver exp cutoff
-        if (receiver_exp_cutoff == 'auto') & (len(rp) ==1):
+        # Debug codes
+        print(receiver_exp.head())
+        print(receiver_exp_cutoff)
+        rf_to_drop = []
+        if receiver_exp_cutoff == 'auto':
+            print(
+                'Estimating {} expression cutoff by fitting a bimodal distribution...'.format(rp)
+                )
             gm = GaussianMixture(n_components=2, random_state=0).fit(
                 receiver_exp.values.reshape(-1,1))
+            labels = gm.predict(receiver_exp.values.reshape(-1,1))
+            # check bimodality and calculate cutoff
+            sd1 = receiver_exp[labels==0].std()
+            sd2 = receiver_exp[labels==1].std()
             m1, m2 = gm.means_.flatten()
-            sd1, sd2 = 2*np.sqrt(gm.covariances_.flatten())
-            if m2-1.5*sd2 <= m1+1.5*sd1:
+            if m1 > m2:
+                m1, m2 = m2, m1
+                sd1, sd2 = sd2, sd1
+            if m2-1*sd2 <= m1+1*sd1:
                 # If not bimodal, use median
-                print('{} expression is likely not bimodal!'.format(rp[0]))
-                cutoff = receiver_exp.quantile(0.5)
+                print('{} expression is likely not bimodal!'.format(rp))
+                print('Using m1 + 1sd cutoff value.')
+                cutoff = m1+1*sd1
             else:
                 cutoff = (m1+m2)/2
+                
+            # For pathways whose expression are very expreme, use median as cutoff
+            if (
+                (labels.sum() > 0.9 * receiver_exp.shape[0]) or 
+                (labels.sum() < 0.1 * receiver_exp.shape[0])
+            ):
+                # print('Receiver expression too extreme, job skipped')
+                print('Receiver expression maybe too extreme.')
+                # rf_to_drop.append(rp)
+                cutoff = receiver_exp.quantile(0.5)
         else:
             cutoff = receiver_exp.quantile(receiver_exp_cutoff)
+    
         if plot_debug:
             receiver_exp.hist(bins=20,density=True)
             plt.plot((cutoff,cutoff), (0,2))
             plt.savefig(
                 os.path.join(intermediate_folder, job_id + "_exp_receiver_dist.pdf"))
+            plt.close()
             
         receiver_exp = receiver_exp > cutoff
         receiver_exp = receiver_exp + 0
+        receiver_exp = receiver_exp[receiver_candidates]
         receiver_exp.to_csv(exp_receiver_fn, header=None, index=None)
 
         spacia_output_path = os.path.join(output_path, job_id)
@@ -822,7 +874,38 @@ if __name__ == "__main__":
     
     with open(os.path.join(output_path, 'spacia_r.log'), 'w') as f:
         f.write('\n'.join(spacia_jobs)) # Save the actual jobs for debug purpose
+        
+    # Save receiver and sender pathways for reference
+    # remove receiver genes from receiver pathway
+    # for key in rf_to_drop:
+    #     del receiver_pathways[key]
+    # sender_pathways['dummy'] = [] # add dummy pathway
+    for pathway_dict, fn in zip(
+        [receiver_pathways, sender_pathways],
+        ["receiver_pathways.json", "sender_pathways.json"],
+    ):
+        if (fn == "sender_pathways.json") & (sender_features == 'pca'):
+            pc_fn = os.path.join(intermediate_folder, 'sender_pc.csv')
+            sender_pathways['Sender_pc'].to_csv(pc_fn)
+            # prepare dummy sender_pathway.json for pca mode
+            pathway_dict = pd.DataFrame(
+                index=sender_pathways['Sender_pc'].index.tolist())
+            pathway_dict = pathway_dict.to_dict(orient='index')
 
+        with open(os.path.join(intermediate_folder, fn), "w") as fp:
+            json.dump(pathway_dict, fp)
+            
+    # Writing spacia R job inputs common for each receiver pathways
+    # job metadata
+    meta_data.to_csv(metadata_fn, sep='\t')
+    
+    # sender distance and expression json (list of lists)
+    with open(dist_sender_fn, "w") as fp:
+        json.dump(sender_dist_dict, fp)
+        
+    with open(exp_sender_fn, "w") as fp:
+        json.dump(sender_exp, fp)
+    
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
     print('Running spacia_R MCMC MIL models.')
