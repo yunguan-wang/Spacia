@@ -769,7 +769,21 @@ if __name__ == "__main__":
     spacia_job_folders = []
     for rp in receiver_pathways.keys():
         job_id = rp
-        spacia_job_folders.append(os.path.join(output_path, job_id))
+        job_folder = os.path.join(output_path, job_id)
+        spacia_job_folders.append(job_folder)
+        
+        # Check if the current rp is already done
+        log_path = os.path.join(job_folder, job_id + '_log.txt')
+        job_finished = False
+        if os.path.exists(log_path):
+            with open(log_path, 'r') as f:
+                log = f.readlines()
+                job_finished = any(
+                    list(map(lambda x: 'Time difference' in x, log)))
+        if job_finished:
+            print(job_id, ' is already finished and will be skipped.')
+            continue
+        
         exp_receiver_fn = os.path.join(
             intermediate_folder, job_id + "_exp_receiver.csv"
         )
