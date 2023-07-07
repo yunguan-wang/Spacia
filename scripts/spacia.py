@@ -200,6 +200,7 @@ def contruct_pathways(
     receiver_features,
     sender_features,
     agg_method,
+    pca_gene = None
 ):
     receiver_pathways = {}
     sender_pathways = {}
@@ -214,7 +215,7 @@ def contruct_pathways(
             # Remove genes with all 0s
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
             # Calculate normalized dispersion and use it as cutoff
-            pca = PCA(20).fit(pathway_exp)
+            pca = PCA(20).fit(scale(pathway_exp))
             pcc = pca.components_
             pcc = pd.DataFrame(
                 pcc,
@@ -222,10 +223,15 @@ def contruct_pathways(
                 columns = pathway_exp.columns
                 )
             pcc = pcc.apply(lambda x: x/x.std())
+            if pca_gene is not None:
+                kept_pcs = abs(pcc.iloc[:5][pca_gene]).sort_values().index[:3].tolist()
+            else:
+                kept_pcs = pcc.index
+            pcc = pcc.loc[kept_pcs]
             pathway_exp_pca = pd.DataFrame(
-                pca.transform(pathway_exp),
+                np.matmul(scale(pathway_exp), pcc.T.values),
                 index = pathway_exp.index,
-                columns = ['PC_' + str(i+1) for i in range(pcc.shape[0])]
+                columns = pcc.index
             )
             pathway_dict[pathway_type + '_pc'] = pcc
             pathway_dict[pathway_type + '_y'] = pathway_exp_pca
@@ -394,7 +400,8 @@ if __name__ == "__main__":
             first column contains pathways names. Spacia will run in mode (3) if \
             the pathway contains multiple genes. If there is only one gene in the pathway,\
             spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
-            5) if nothing is passed, spacia will run in mode (4).",
+            4) 'all', spacia will use all genes in the count matrix; \
+            6) if nothing is passed, spacia will run in mode (4).",
     )
 
     parser.add_argument(
@@ -418,6 +425,12 @@ if __name__ == "__main__":
             6) if nothing is passed, spacia will run in mode (4).",
     )
 
+    parser.add_argument (
+        "--pca_gene",
+        "-pg",
+        help = "Additional gene to be included in the pca mode. Note this will cause spacia \
+            to use only the 3 top pcs."
+    )
     parser.add_argument(
         "--output_path", "-o", type=str, default="spacia", help="Output path"
     )
@@ -486,8 +499,16 @@ if __name__ == "__main__":
         "--bag_size",
         "-b",
         type=int,
-        default=1,
+        default=2,
         help="Minimal bag size for sender cells.",
+    )
+    
+    parser.add_argument(
+        "--number_bags",
+        "-nb",
+        type=int,
+        default=5000,
+        help="Number of bags used in multiple instance learning.",
     )
 
     parser.add_argument(
@@ -555,13 +576,14 @@ if __name__ == "__main__":
     
     # args = parser.parse_args(
     #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/sprod/denoised_stitched.txt',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/spacia_spot_meta_yw.txt',
-    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanBreastCancerPatient1/sprod/denoised_stitched.txt',
+    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanBreastCancerPatient1/spacia_spot_meta_yw.txt',
+    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/test',
     #     '-rc', 'Tumor_cells', 
     #     '-sc', 'Fibroblasts',
     #     '-n', '50',
     #     '-sf', 'pca',
+    #     '-rf','all',
     #     '--corr_agg',
     #     '-rec', 'auto'
     #     ]
@@ -608,6 +630,9 @@ if __name__ == "__main__":
     plot_debug = args.debug_plots
     corr_agg_method = args.corr_agg_method
     bag_size = args.bag_size
+    nb = args.number_bags
+    pca_gene = args.pca_gene
+    np.random.seed(0)
 
     # Checking inputs
     assert corr_agg_method in ['simple','weighted'], \
@@ -694,14 +719,16 @@ if __name__ == "__main__":
     r2s_matrix = r2s_matrix[r2s_matrix.apply(len) >= bag_size]
     if r2s_matrix.shape[0] < 500:
         raise ValueError('Number of total bags is too small, job killed.')
-    elif r2s_matrix.shape[0]> 5000:
-        print('Subsampled 5000 bags for Spacia.')
-        r2s_matrix = r2s_matrix.sample(5000, replace=False)
+    elif r2s_matrix.shape[0]> nb:
+        print('Subsample bags for Spacia.')
+        r2s_matrix = r2s_matrix.sample(nb, replace=False)
     sender_candidates = list(set(r2s_matrix.sum()))
     receiver_candidates = r2s_matrix.index.tolist()
 
     ######## Preparing spacia_job.R inputs ########
     # Contruct sender and receiver pathways
+    if receiver_features == 'all':
+        receiver_features = ','.join(cpm.columns)
     receiver_pathways, sender_pathways = contruct_pathways(
         cpm, 
         receiver_candidates, 
@@ -709,6 +736,7 @@ if __name__ == "__main__":
         receiver_features, 
         sender_features,
         corr_agg_method,
+        pca_gene
     )
     # If no receiver pathways are found, abort.
     if len(receiver_pathways.keys()) == 0:
@@ -741,10 +769,13 @@ if __name__ == "__main__":
     # contruct and save sender exp
     if sender_features == 'pca':
         sender_pathway_exp = sender_pathways['Sender_y']
+        if pca_gene is not None:
+            sender_pathway_exp[pca_gene] = cpm.loc[sender_pathway_exp.index, pca_gene]
+        sender_pathway_exp.loc[:,:] = scale(sender_pathway_exp)
     else:
         sender_pathway_exp = pd.DataFrame(
             index=sender_candidates, columns=sender_pathways.keys()
-        )  
+        )
         for key in sender_pathway_exp.columns:
             sender_pathway_exp[key] = scale(
                 cpm.loc[sender_candidates, sender_pathways[key]].mean(axis=1)
@@ -781,7 +812,7 @@ if __name__ == "__main__":
                 job_finished = any(
                     list(map(lambda x: 'Time difference' in x, log)))
         if job_finished:
-            print(job_id, ' is already finished and will be skipped.')
+            print(job_id + ' is already finished and will be skipped.')
             continue
         
         exp_receiver_fn = os.path.join(
@@ -799,8 +830,8 @@ if __name__ == "__main__":
                 )
         # Decide receiver exp cutoff
         # Debug codes
-        print(receiver_exp.head())
-        print(receiver_exp_cutoff)
+        # print(receiver_exp.head())
+        # print(receiver_exp_cutoff)
         rf_to_drop = []
         if receiver_exp_cutoff == 'auto':
             print(
@@ -891,6 +922,8 @@ if __name__ == "__main__":
             pathway_dict = pd.DataFrame(
                 index=sender_pathways['Sender_pc'].index.tolist())
             pathway_dict = pathway_dict.to_dict(orient='index')
+            if pca_gene is not None:
+                pathway_dict[pca_gene] = {}
 
         with open(os.path.join(intermediate_folder, fn), "w") as fp:
             json.dump(pathway_dict, fp)
