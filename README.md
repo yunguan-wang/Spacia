@@ -64,7 +64,7 @@ Todo
 Todo
 
 ### Contact Us
-If you have any suggestions/ideas for Sprod or are having issues trying to use it, please don't hesitate to reach out to us.
+If you have any suggestions/ideas for Spacia or are having issues trying to use it, please don't hesitate to reach out to us.
 
 Yunguan Wang, yunguan[dot]wang@utsouthestern[dot]edu
 
