@@ -53,6 +53,8 @@ Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to 
 ### How Spacia defines interactant
 Todo
 
+### How to use a custom list of cells as **receiver** or **sender**
+
 ### List of Parameters
 ```
 Todo
