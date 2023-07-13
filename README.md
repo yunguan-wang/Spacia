@@ -60,24 +60,9 @@ Todo
 Todo
 ```
 
-### PCA mode script
-A scipt is provided to run spacia in PCA mode and return gene level betas. The spacia results are returned in an RData object.
-```
-Rscript [path/to/execute_spacia.R] \
-	-i [path/to/input] \
-	-r celltype1 \
-	-s celltype2 \
-	-g gene1 \
-	-t [path/to/gene_cutoffs_prostate1.csv] \
-	-o [path/to/output_celltype2-celltype1_gene1]
-```
-Use `-h` or `--help` to see detailed descriptions of options and inputs.
+### For advanced users
+For users who want to directly access the core of spacia and perform more flexible analyses, we provide an example R scipt that showcases the few key steps. But please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets.
 
-#### A few additional notes for the parameters:
-Todo
-
-### PCA mode script
-A scipt is provided to run spacia in PCA mode and return gene level betas. The spacia results are returned in an RData object.
 ```
 Rscript [path/to/execute_spacia.R] \
 	-i [path/to/input] \
