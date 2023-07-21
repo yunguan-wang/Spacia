@@ -35,8 +35,19 @@ Todo
 
 ## Usage
 
+### Definition of terms used in Spacia
+**Interaction**: Relationship between a pair of genes that potentially leads to downstream signalling events in cells.
+
+**Signal**: The gene in the **interaction** that is causing downstream signaling events.
+
+**Response**: The gene in the **interactions** whose expression is changed as the result of activities from **Signal**.
+
+**Sender**: A cell where the **Signal** is expressed.
+
+**Receiver**: A cell where the **Response** is expressed. 
+
 ### Quick start
-Once the input data have been processed into the supported format, the full sprod workflow can be run by calling the `sprod.py` script. Sprod will first try to locate a single `.tif` image file in the input path. If one is found, sprod will assume it is the matching image and extract features from the image. If sprod cannot find an image, it will perform soft clustering on the spots and use the clustering probabilities as the input features for the denoising model. It evaluates interactions within the context of cell neighborhoods, where the ‘**receiver**’ cells are the cells of interest, and the cells from the neighborhood are referred to as "**sender**" cells. The **interactant** expressed in the receiver cells, through which the interactions are to be studied, are referred to as "**responder**", while the **interactant** expressed in the sender cells that potentially influence the responder genes are called signal “**sending**".
+Once the input data have been processed into the supported format, the full Spacia workflow can be run by calling the `Spacia.py` script. It evaluates interactions within the context of cell neighborhoods, where the ‘**receiver**’ cells are the cells of interest, and the cells from the neighborhood are referred to as "**sender**" cells. The **interactant** expressed in the receiver cells, through which the interactions are to be studied, are referred to as "**responder**", while the **interactant** expressed in the sender cells that potentially influence the responder genes are called signal “**sending**".
 
 ```
 python [path/to/spacia_job.py] counts.txt cell_metadata.txt -rc celltype1 sc celltype2 -rf gene1 sf gene2
@@ -49,9 +60,6 @@ Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to 
 `-rc` and `-sc` refer to **receiver** cells and **sender** cells, respectively.
 
 `-rf` and `-sf` refer to **responder** and **sending** features. Here they are in forms of single genes. Spacia can also take pathways in the format of a list of genes as inputting features. 
-
-### How Spacia defines interactant
-Todo
 
 ### How to use a custom list of cells as **receiver** or **sender**
 
