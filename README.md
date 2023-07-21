@@ -36,18 +36,20 @@ Todo
 ## Usage
 
 ### Definition of terms used in Spacia
-**Interaction**: Relationship between a pair of genes that potentially leads to downstream signalling events in cells.
+**Interaction**: Relationship between a pair **interactants** that potentially leads to downstream signalling events in cells. The **interactant** can be a pair of genes or genesets.
 
-**Signal**: The gene in the **interaction** that is causing downstream signaling events.
+**Signal**: The gene or geneset in the **interaction** that is causing downstream signaling events.
 
-**Response**: The gene in the **interactions** whose expression is changed as the result of activities from **Signal**.
+**Response**: The gene or geneset in the **interactions** whose expression is changed as the result of activities from **Signal**.
 
 **Sender**: A cell where the **Signal** is expressed.
 
 **Receiver**: A cell where the **Response** is expressed. 
 
+**Neighborhood**: A regions centering around each **Receivers** that contains **Senders** of interest.
+
 ### Quick start
-Once the input data have been processed into the supported format, the full Spacia workflow can be run by calling the `Spacia.py` script. It evaluates interactions within the context of cell neighborhoods, where the ‘**receiver**’ cells are the cells of interest, and the cells from the neighborhood are referred to as "**sender**" cells. The **interactant** expressed in the receiver cells, through which the interactions are to be studied, are referred to as "**responder**", while the **interactant** expressed in the sender cells that potentially influence the responder genes are called signal “**sending**".
+Once the input data have been processed into the supported format, the full Spacia workflow can be run by calling the `Spacia.py` script. It evaluates interactions within the context of cell neighborhoods, where the ‘**receiver**’ cells are the cells of interest, and the cells from the neighborhood are referred to as "**sender**" cells. The **interactant** expressed in the receiver cells, through which the interactions are to be studied, are referred to as "**Response**", while the **interactant** expressed in the sender cells that potentially influence the responder genes are called signal “**Signal**".
 
 ```
 python [path/to/spacia_job.py] counts.txt cell_metadata.txt -rc celltype1 sc celltype2 -rf gene1 sf gene2
@@ -59,7 +61,14 @@ Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to 
 
 `-rc` and `-sc` refer to **receiver** cells and **sender** cells, respectively.
 
-`-rf` and `-sf` refer to **responder** and **sending** features. Here they are in forms of single genes. Spacia can also take pathways in the format of a list of genes as inputting features. 
+`-rf` and `-sf` refer to **Response** and **Signal** features. Here they are in forms of single genes. Spacia can also take pathways in the format of a list of genes as inputting features. 
+### List of other important parameters
+`--dist_cutoff` or `-d`: The euclidean distance deifining the radius of the neighborhood around each receiver cell.
+
+### Processing **interactant** expression
+Spacia employs several different workflow to calculate response and signal expression in cells, aiming to handle use cases of disfferent purposes.
+When the **interactant** is a single gene, Spacia can try to mitigate noises associated with gene expression in SRT data by considering the expression of highly correlated genes (by absolute Pearson correlation values). This behavior can be turned off by passing the `--corr_agg` keyword. The number of highly correlated genes to consider can be changed by passing the desired number to the `--num_corr_genes` keyword. The new expression value considering these correlated genes can be calculated as the weighted average of there expression, whereas the weights are the Pearson correlation coefficients with the gene of interest. In cases where only the positively correlated genes should be considered, spacia will only include the top positively correlated genes to calculate the expression of the **interactant**. This behavior can be set by passing `--corr_agg_method simple`.
+
 
 ### How to use a custom list of cells as **receiver** or **sender**
 
