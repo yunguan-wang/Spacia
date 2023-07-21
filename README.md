@@ -62,8 +62,7 @@ Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to 
 `-rc` and `-sc` refer to **receiver** cells and **sender** cells, respectively.
 
 `-rf` and `-sf` refer to **Response** and **Signal** features. Here they are in forms of single genes. Spacia can also take pathways in the format of a list of genes as inputting features. 
-### List of other important parameters
-`--dist_cutoff` or `-d`: The euclidean distance deifining the radius of the neighborhood around each receiver cell.
+
 
 ### Processing **interactant** expression
 **Spacia employs several different workflows to calculate **interactant** expression in cells, aiming to handle use cases of disfferent purposes. The behavior is controled largely by the `--receiver_features` and `--sender_features` paramerters, and a few others by a lesser extent. **
@@ -73,12 +72,25 @@ Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to 
 The list of genes can be passed as a string separted by "|", e.g., 'CD3E|CD4|CD8A'. It can be also passed by a csv files, with each genelist as a separated row, where the first element is the name of the genelist. These paramerters should be passed to `--receiver_features` or `--sender_features`.
 * Spacia can also be run in two unsupervised modes where the **interactant** is not provided. In the first unsupervised mode, spacia will transform the SRT data using the first 20 principal components, and use the transformed dimensions as **interactants**. ****This mode is not recommended for response genes, as the interactions predicted in this way are difficult to interpret.**** This mode can be set by passing `pca` to `--receiver_features` or `--sender_features`. In the second unsupervised mode, spacia will cluster the genes in the SRT data using hierarchical clustering and use the expression value of each cluster centroid as the **interactions**. This mode can be set by not passing any parameters to `--receiver_features` or `--sender_features`.
 
-### How to use a custom list of cells as **receiver** or **sender**
+#### A summary of important parameters mentioned above
+`--receiver_features` and `--sender_features`: Controls the **interactants** in spacia, can be a single gene, a set of genes seperated by "|", `pca` for the first unsupervised mode, or left blank for the second unsupervised mode.
 
-### List of Parameters
-```
-Todo
-```
+`--receiver_cluster` and `--sender_cluster`, `--cellid_file`: Controls the cellular contexts of **interactants** in spacia. `--receiver_cluster` and `--sender_cluster` must be cluster names present in metadata, if these are left blank, `--cellid_file` must be provided.
+
+ `--corr_agg`, `--num_corr_genes` and `--corr_agg_method: Determines how the gene expression is aggregated. 
+
+#### List of other important parameters
+`--dist_cutoff` or `--n_neighbors`: Determines the radius of the neighborhood around each receiver cell. Can be passed as an exact number to `--dist_cutoff` or estimated based on the required number of neighbors given by `--n_neighbors`.
+
+`--bag_size`: The minimal size of each bag in the MIC model, i.e., the minimal number of **sender** cells within each **receiver** cell's neighborhood.
+
+`--number_bags`: The number of bags used in the MIL model.
+
+`--mcmc_params`: Advanced hyperparameters for the MIL model.
+
+`--output_path`: Output folder for spacia.
+
+For the see the output of ```python spacia.py -h``` for details.
 
 ### For advanced users
 For users who want to directly access the core of spacia and perform more flexible analyses, we provide an example R scipt that showcases the few key steps. But please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets. Our analysis codes of the prostate Merscope data (Fig. 4) are derived based on this R script. But the major pre-processing, inference, and post-processing steps shown in this R script are all consistent with those in our main spacia API.
