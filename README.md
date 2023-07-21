@@ -77,7 +77,7 @@ The list of genes can be passed as a string separted by "|", e.g., 'CD3E|CD4|CD8
 
 `--receiver_cluster` and `--sender_cluster`, `--cellid_file`: Controls the cellular contexts of **interactants** in spacia. `--receiver_cluster` and `--sender_cluster` must be cluster names present in metadata, if these are left blank, `--cellid_file` must be provided.
 
- `--corr_agg`, `--num_corr_genes` and `--corr_agg_method: Determines how the gene expression is aggregated. 
+ `--corr_agg`, `--num_corr_genes` and `--corr_agg_method`: Determines how the gene expression is aggregated. 
 
 #### List of other important parameters
 `--dist_cutoff` or `--n_neighbors`: Determines the radius of the neighborhood around each receiver cell. Can be passed as an exact number to `--dist_cutoff` or estimated based on the required number of neighbors given by `--n_neighbors`.
