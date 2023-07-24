@@ -52,7 +52,7 @@ Todo
 Once the input data have been processed into the supported format, the full Spacia workflow can be run by calling the `Spacia.py` script. It evaluates interactions within the context of cell neighborhoods, where the ‘**receiver**’ cells are the cells of interest, and the cells from the neighborhood are referred to as "**sender**" cells. The **interactant** expressed in the receiver cells, through which the interactions are to be studied, are referred to as "**Response**", while the **interactant** expressed in the sender cells that potentially influence the responder genes are called signal “**Signal**".
 
 ```
-python [path/to/spacia_job.py] counts.txt cell_metadata.txt -rc celltype1 sc celltype2 -rf gene1 sf gene2
+python [path/to/spacia.py] counts.txt cell_metadata.txt -rc celltype1 sc celltype2 -rf gene1 sf gene2
 ```
 
 Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to be normliazed, if not, CPM normalization will be used.
