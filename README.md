@@ -30,8 +30,20 @@ The total installation time is around 10 mintunes. If error occuors, please upgr
 #### Note:
 
 ## Test installation
-Todo
+Test Spacia using a simple test script by:
 
+```python test.py```
+
+The output should look like this 
+
+```
+Testing Spacia with a single gene as response feature and simple aggregation
+Test Succeeded.
+Testing Spacia with multiple genes as response feature and no agg mode
+Test Succeeded.
+Testing Spacia with multiple genes as response feature and pca agg mode
+Test Succeeded.
+```
 ## Usage
 
 ### Definition of terms used in Spacia
