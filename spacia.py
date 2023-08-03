@@ -1,6 +1,4 @@
 """
-# TODO: Fillme
-# TODO: make coord linux friendly
 Dependency
 ----------
 R >= 4.0.2
@@ -30,7 +28,7 @@ import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.cluster import AgglomerativeClustering
-from sklearn.preprocessing import robust_scale, scale
+from sklearn.preprocessing import scale
 from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
 
@@ -110,15 +108,6 @@ def find_sender_candidates(r_cells, s_cells, locations, dist_cutoff=30):
     r_cells, s_cells: list of spot ids.
     locations: pd.DataFrame of X, Y locations
     """
-    # for r in r_cells:
-    #     dist_to_senders = cdist(
-    #         locations.loc[r].values.reshape(-1, 2),
-    #         locations.loc[s_cells].values.reshape(-1, 2),
-    #     )[0]
-    #     crit = dist_to_senders <= dist_cutoff
-    #     if crit.sum() == 0:
-    #         continue
-    #     pip[r] = s_cells[crit].tolist()
     pip = pd.Series(dtype=object)
     n_chunks = int(np.ceil(len(r_cells)/10000))
     for c in range(n_chunks):
@@ -349,9 +338,8 @@ def remove_outliers(betas):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Main function for running spacia. This are running modes and spacia will \
-            automatically decide which one to use based on the 'receiver/sender features' and \
-            the 'corr_agg' toggle. Below are the four modes: \n\t\
+        description="Main function for running spacia. There are several running modes and spacia will \
+            automatically decide which one to use based on the input parameters. Below are the four modes: \n\t\
             (1) No aggregation: The user either provides one or several single genes, \
             for sending/receiving pathways. These will be used in the analysis directly; \
             These genes have to be positively correlated. \n\t\
@@ -372,7 +360,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "counts",
-        help="Path for gene expression data, spots by genes, raw counts. \
+        help="Path for gene expression data, spots by genes, must be normlized. \
             TXT format",
     )
 
@@ -678,8 +666,11 @@ if __name__ == "__main__":
             "Metadata must have ['X','Y','cell_type'] columns!"
         )
     # TODO: added a tag to allow normalization
-    if counts.max().max() > 100:
-        cpm = preprocessing_counts(counts)
+    if counts.max().max() > 1000:
+        # cpm = preprocessing_counts(counts)
+        UserWarning(
+            'input gene expression data does not seem in log1cpm format'
+            )
     else:
         cpm = counts
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
