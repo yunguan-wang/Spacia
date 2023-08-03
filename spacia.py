@@ -169,12 +169,14 @@ def get_corr_agg_genes(corr_agg, cpm, cells, g, top_corr_genes, agg_method):
             cpm.loc[cells].T,
             metric="correlation",
         )[0]
-        pathway_genes = pd.Series(corr, cpm.columns)
+        pathway_genes = pd.Series(corr, index = cpm.columns)
         if agg_method == 'simple':
             pathway_genes = pathway_genes[pathway_genes>0]
         else:
             pathway_genes = abs(pathway_genes)
-        pathway_genes = pathway_genes.sort_values(ascending=False)[:top_corr_genes].tolist()
+        pathway_genes = pathway_genes.sort_values(
+            ascending=False
+            )[:top_corr_genes].index.tolist()
         pathway_name = g + "_correlated_genes"
     else:
         logging.warning("Correlation aggregation is turned off and this pathway has only one gene. This is not recommended.")
@@ -562,39 +564,22 @@ if __name__ == "__main__":
     ######## Setting up ########
     # Debug param
     
-    # args = parser.parse_args(
-    #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanBreastCancerPatient1/sprod/denoised_stitched.txt',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanBreastCancerPatient1/spacia_spot_meta_yw.txt',
-    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/test',
-    #     '-rc', 'Tumor_cells', 
-    #     '-sc', 'Fibroblasts',
-    #     '-n', '50',
-    #     '-sf', 'pca',
-    #     '-rf','all',
-    #     '--corr_agg',
-    #     '-rec', 'auto'
-    #     ]
-    # )
-    
-    # args = parser.parse_args(
-    #     [
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/sprod/denoised_stitched.txt',
-    #     '/project/shared/xiao_wang/projects/cell2cell_inter/data/merscope_data/HumanProstateCancerPatient1/spacia_spot_meta_yw.txt',
-    #     '-o', '/project/shared/xiao_wang/projects/cell2cell_inter/data/spacia_merscope/vanila_prior',
-    #     '-rc', 'Tumor_cells', 
-    #     '-sc', 'Endothelial_cells',
-    #     '-rf', 'PLVAP,VWF,HLA.B,DUSP1,PECAM1,ENG,HLA.C,CTNNB1,MMRN2,INSR,TGFBR2,ITGB1,PKM,HLA.DRA,CDH5,ETS1,NFKBIA,CLEC14A,WWTR1,NOTCH1,KLF2,JUN,JUNB,COL4A1,NRP1,KDR,HLA.DRB1,EPHB4,PLA2G2A,ACTA2,FOS,BST2,STAT6,TAPBP,JAK1,CREBBP,HDAC1,GPX3,FLT4,CAV1,AKT1,EGR1,FLT1,STAT3,CLDN5,PTK2,RELA,MYC,THBD,LMNA,SOCS3,BRD4,TGFBR3,LRP5,BCL2L1,ZEB1,HLA.DMA,TGFB1,AKT3,NOS3,TAP2,SELP,HIF1A,IKBKB,TNFSF10,NFE2L2,ITGA5,YAP1,FN1,STING1,HLA.DPB1,CDKN1A,CIITA,IDH1,XBP1,COL1A1,CX3CL1,IL3RA,VEGFA,ICAM2,PDGFB,BMP1,MAML1,CEACAM1,MYH11,FGFR1,TCF7L2,DES,PREX2,AMOTL2,IFNGR1,VEGFC,TEAD1,CDKN1B,TBX3,CCND1,PDGFRB,NFKB1,ITGA1,CD40,NFKB2,ICAM1,LRP1,SOD2,IRF3,PDK4,CDK4,TP53,NF1,TEK,IFNGR2,RAF1,MET,VEGFB,LGALS9,VSIR,PPARD,SMAD2,BRAF,STAT5A,IFITM1,ELN,TEAD4,CDK6,ERBB2,KITLG,SHARPIN,ANGPT2,NEDD4,COL5A1,EPHA4,TGFB3,RB1,CSF1,CMKLR1,EPHA2,IGF1R,TGFB2,CEBPB,MLH1,HLA.DQA1,IFNAR2,LRP6,CDK2,MSH3,NDUFA4L2,ARAF,IFNAR1,TAP1,ACKR3,APC,EGFR,BAK1,HRAS,MSH6,CXCR4,STAT1,MAP2K1,HLA.DPA1,MMRN1,PTEN,AXIN2,BMI1,TGFBR1,PIK3CG,ATR,TMEM37,FBLN1,CD207,VCAM1,KRAS,SPRY2,TBK1,PIK3CA,BAX,CD276,CDH1,AKT2,NRAS,RGMB,CXCL16,HDAC3,MSH2,DIABLO,SFRP2,ATF3,LDHA,DNMT3A,SNAI2,RORC,TGFBI,BCL2,PCNA,ICAM3,CD14,ADAMTS4,SMOC2,CXCL12,TSC1,CSF3',
-    #     '-n', '50',
-    #     '-sf', 'pca',
-    #     '--corr_agg',
-    #     '-rec', 'auto'
-    #     ]
-    # )
-    
 #%%
     ######## Setting up ########
     args = parser.parse_args()
+    # args = parser.parse_args(
+    #     [
+    #         '/home2/s190548/work_personal/software/cell2cell_inter/code/test/input/Counts.txt',
+    #         '/home2/s190548/work_personal/software/cell2cell_inter/code/test/input/spacia_metadata.txt',
+    #         '-rc', 'A',
+    #         '-sc', 'B',
+    #         '-rf', 'gene1',
+    #         '-sf', 'gene2,gene3',
+    #         '-d', '5',
+    #         '-m', '5000,2500,10,2',
+    #         '-nc', '20',
+    #         '-o', '/home2/s190548/work_personal/software/cell2cell_inter/code/test/test_output'
+    #         ])
     counts = args.counts
     spot_meta = args.spot_meta
     receiver_cluster = args.receiver_cluster
@@ -640,12 +625,12 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
         level="INFO",
     )
-    print(args)
+    # print(args)
 
     # getting script path for supporting codes.
     spacia_path = os.path.abspath(__file__)
     wrapup_script = spacia_path.replace("spacia.py", "wrapup_spacia_results.py")
-    spacia_path = "/".join(spacia_path.split("/")[:-2]) + "/spacia"
+    spacia_path = "/".join(spacia_path.split("/")[:-1]) + "/spacia"
     spacia_script = os.path.join(spacia_path, "spacia_job.R")
 
     # redirects stdout and stderr to logger

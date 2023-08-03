@@ -1,5 +1,5 @@
-library(coda)
-library(ggmcmc)
+suppressPackageStartupMessages(library(coda))
+suppressPackageStartupMessages(library(ggmcmc))
 
 #' Create density, trace, autocorrelation, and PSRF plots 
 #' for b and betas and return the ggmcmc::ggs() object, S

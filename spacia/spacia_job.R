@@ -1,9 +1,6 @@
 # This is a wrapper script for MIL_wrapper.R, serving as the interface between
 # python master script and the MIL model. The only usage for this script so far 
 # is to be called by the python wrapper.
-
-library(Rcpp)
-library(rjson)
 # Debug data
 # setwd('E:/projects/cell2cell_inter/code/data/simulation/')
 # spacia_path = './spacia/'
@@ -68,9 +65,13 @@ if (is.na(args[13])) {
 }
 thetas = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 
-
 # redirect logs
-sink(file = paste(output_path, job_id, '_log.txt', sep=''))
+sink(
+  file = paste(output_path, job_id, '_log.txt', sep=''),
+  type = c("output", "message"))
+suppressPackageStartupMessages(library(Rcpp))
+suppressPackageStartupMessages(library(rjson))
+
 #########  source codes  #################
 sourceCpp(paste(spacia_path,"Fun_MICProB_C2Cinter.cpp", sep=''))
 source(paste(spacia_path,'MICProB_MIL_C2Cinter.R', sep=''))
@@ -85,8 +86,8 @@ exp_receiver = read.csv(
 exp_receiver = exp_receiver == 1
 
 # Read sender expression 
-exp_sender = fromJSON(file=exp_sender)
-exp_sender = sapply(exp_sender, function (x) do.call(rbind, x))
+exp_sender = fromJSON(file=exp_sender) 
+exp_sender = sapply(exp_sender, function (x) do.call(rbind, as.list(x))) # Fixed bug causing error when there is only one signal
 
 # Read sender distance to receivers
 dist_sender = fromJSON(file=dist_sender)
