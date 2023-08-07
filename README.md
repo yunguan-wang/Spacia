@@ -8,6 +8,9 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 <img src="https://github.com/yunguan-wang/Spacia/blob/main/img/fig2b.png" height="300" width="1000">
 ## Installation
 ### Dependency
+
+If you are on a macOS and do not have the Xcode Command Line Tools installed, please do so by running `xcode-select --install` in terminal.
+
 R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`.
 
 Python: `R>=3.8`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`.
