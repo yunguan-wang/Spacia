@@ -569,8 +569,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # args = parser.parse_args(
     #     [
-    #         '/home2/s190548/work_personal/software/cell2cell_inter/code/test/input/Counts.txt',
-    #         '/home2/s190548/work_personal/software/cell2cell_inter/code/test/input/spacia_metadata.txt',
+    #         '/endosome/work/InternalMedicine/s190548/Spacia/test/input/counts.txt',
+    #         '/endosome/work/InternalMedicine/s190548/Spacia/test/input/spacia_metadata.txt',
     #         '-rc', 'A',
     #         '-sc', 'B',
     #         '-rf', 'gene1',
@@ -578,7 +578,7 @@ if __name__ == "__main__":
     #         '-d', '5',
     #         '-m', '5000,2500,10,2',
     #         '-nc', '20',
-    #         '-o', '/home2/s190548/work_personal/software/cell2cell_inter/code/test/test_output'
+    #         '-o', '/endosome/work/InternalMedicine/s190548/Spacia/test'
     #         ])
     counts = args.counts
     spot_meta = args.spot_meta
@@ -727,11 +727,13 @@ if __name__ == "__main__":
     # Calculate each receiver sender pair distances
     dist_r2s = r2s_matrix.to_frame().apply(
         lambda x: (cdist(
-            spot_meta.loc[x.name, :"Y"].values.reshape(-1, 2),
-            spot_meta.loc[x[0], :"Y"].values.reshape(-1, 2),
+            # fixed issue in pandas that makes it object
+            spot_meta.loc[[x.name], :"Y"].values.reshape(-1, 2),
+            spot_meta.loc[x.iloc[0], :"Y"].values.reshape(-1, 2),
         )[0]/dist_cutoff).round(5), # normalize distance to 0-1
         axis=1,
     )
+    
     sender_dist_dict = {}
     for i in dist_r2s.index:
         sender_dist_dict[i] = dist_r2s[i].tolist()
@@ -740,7 +742,7 @@ if __name__ == "__main__":
     meta_data = spot_meta.loc[receiver_candidates, :"Y"]
     meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
     meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
-    meta_data = meta_data.append(meta_data_senders)
+    meta_data = pd.concat([meta_data, meta_data_senders])
 
     # contruct and save sender exp
     if sender_features == 'pca':
@@ -961,7 +963,7 @@ if __name__ == "__main__":
         #     sender_pathways_names = list(sender_pathways_names) + ['dummy']
             
         res_beta.Sender_pathway = sender_pathways_names
-        pathways = pathways.append(res_beta)
+        pathways = pd.concat([pathways, res_beta])
 
         # aggregating primamy instances for different receiver pathways
         pip_res = pd.read_csv(
@@ -973,7 +975,7 @@ if __name__ == "__main__":
         _interactions = interactions_template.copy()
         _interactions.index = [job_id] * _interactions.shape[0]
         _interactions["Primary_instance_score"] = pip_res.values
-        interactions = interactions.append(_interactions)
+        interactions = pd.concat([interactions, _interactions])
 
         # aggregating b and FDR for different receiver pathways
         pred_b = (
@@ -987,7 +989,7 @@ if __name__ == "__main__":
         fdr.columns = ["Theta_cutoff", "FDR"]
         fdr.Theta_cutoff = fdr.Theta_cutoff / 10
         fdr["b"] = pred_b
-        b_plus_fdr = b_plus_fdr.append(fdr)
+        b_plus_fdr = pd.concat([b_plus_fdr, fdr])
 
         pathways.to_csv(os.path.join(output_path, "Pathway_betas.csv"))
         interactions.to_csv(os.path.join(output_path, "Interactions.csv"))
