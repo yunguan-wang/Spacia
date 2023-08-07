@@ -9,8 +9,6 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 ## Installation
 ### Dependency
 
-If you are on a macOS and do not have the Xcode Command Line Tools installed, please do so by running `xcode-select --install` in terminal.
-
 R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`.
 
 Python: `R>=3.8`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`.
@@ -30,7 +28,7 @@ git clone [repo_path]
 
 The total installation time is around 10 minutes. If an error occurs, please upgrade pip and try again.
 
-#### Note:
+**Note**: If you are on a macOS and do not have the Xcode Command Line Tools installed, please do so by running `xcode-select --install` in terminal.
 
 ## Test installation
 Test Spacia using a simple test script by:
