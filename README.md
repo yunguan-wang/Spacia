@@ -9,7 +9,7 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 ## Installation
 ### Dependency
 
-R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`.
+R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`, rjson.
 
 Python: `R>=3.8`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`.
 We strongly recommend using conda to manage the installation of all dependencies. To do this, simply run:
