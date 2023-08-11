@@ -191,7 +191,8 @@ def contruct_pathways(
     receiver_features,
     sender_features,
     agg_method,
-    pca_gene = None
+    n_pc = 20,
+    pca_gene = None,
 ):
     receiver_pathways = {}
     sender_pathways = {}
@@ -206,7 +207,7 @@ def contruct_pathways(
             # Remove genes with all 0s
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
             # Calculate normalized dispersion and use it as cutoff
-            pca = PCA(20).fit(scale(pathway_exp))
+            pca = PCA(n_pc).fit(scale(pathway_exp))
             pcc = pca.components_
             pcc = pd.DataFrame(
                 pcc,
@@ -421,6 +422,14 @@ if __name__ == "__main__":
         help = "Additional gene to be included in the pca mode. Note this will cause spacia \
             to use only the 3 top pcs."
     )
+    
+    parser.add_argument (
+        "--num_comps",
+        "-n_pc",
+        help = "Number of components to be used in the pca mode.",
+        default=20,
+        type=int
+    )
     parser.add_argument(
         "--output_path", "-o", type=str, default="spacia", help="Output path"
     )
@@ -605,6 +614,7 @@ if __name__ == "__main__":
     bag_size = args.bag_size
     nb = args.number_bags
     pca_gene = args.pca_gene
+    n_pc = args.num_comps
     np.random.seed(0)
 
     # Checking inputs
@@ -712,6 +722,7 @@ if __name__ == "__main__":
         receiver_features, 
         sender_features,
         corr_agg_method,
+        n_pc,
         pca_gene
     )
     # If no receiver pathways are found, abort.
