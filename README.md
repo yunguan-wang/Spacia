@@ -44,6 +44,13 @@ Testing Spacia with multiple genes as response feature and no agg mode
 Test Succeeded.
 Testing Spacia with multiple genes as response feature and pca agg mode
 Test Succeeded.
+### About the test data
+
+The test data is a subset of the simulation dataset generated for the purpose of validating the model.
+
+The test itself contains ~2,500 cells and it should finish in 5 minutes.
+
+The purpose of the test is only to validate the installation, and the there is not interpretation associated with the test results.
 ```
 ## Usage
 
