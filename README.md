@@ -52,7 +52,7 @@ The test data is a subset of a simulation dataset generated for the purpose of v
 
 The test itself contains ~2,500 cells and it should finish in 5 minutes.
 
-The purpose of the test is only to validate the installation, and the there is interpretation associated with the test results.
+The purpose of the test is only to validate the installation, and the there is no interpretation associated with the test results.
 
 ## Usage
 
