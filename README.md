@@ -48,11 +48,13 @@ Test Succeeded.
 
 ### About the test data
 
-The test data is a subset of a simulation dataset generated for the purpose of validating the model.
+The test data is a randomly generated dataset for the purpose of validating the installation only.
 
 The test itself contains ~2,500 cells and it should finish in 5 minutes.
 
 The purpose of the test is only to validate the installation, and the there is no interpretation associated with the test results.
+
+We have also included the simulation dataset used in our manuscript in `/data/simulation`
 
 ## Usage
 
