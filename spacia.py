@@ -1,20 +1,3 @@
-"""
-Dependency
-----------
-R >= 4.0.2
-    Rcpp, gcc
-if running in biohpc, need to do module purge; module load shared first.
-Python dependencies will be handeled automatically by installing the spacia package.
-
-Test:
-python [path/to/spacia.py] /project/shared/xiao_wang/projects/cell2cell_inter/data/Counts.txt \
-    /project/shared/xiao_wang/projects/cell2cell_inter/data/Spot_metadata.txt \
-    FGFR1 \
-    -o, /endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test \
-    -rc C_1 -sc C_2 \
-    -sf FGF1,FGF2,FGF7,FGF9,FGF10,FGF11,FGF12,FGF13,FGF14,FGF17,FGF18 \
-    # -cf /endosome/work/InternalMedicine/s190548/software/cell2cell_inter/data/spacia_py_test/input/input_cells.csv
-"""
 #%%
 import os
 import sys
@@ -191,7 +174,8 @@ def contruct_pathways(
     receiver_features,
     sender_features,
     agg_method,
-    pca_gene = None
+    n_pc = 20,
+    pca_gene = None,
 ):
     receiver_pathways = {}
     sender_pathways = {}
@@ -206,7 +190,7 @@ def contruct_pathways(
             # Remove genes with all 0s
             pathway_exp = pathway_exp.T[pathway_exp.std() > 0].T
             # Calculate normalized dispersion and use it as cutoff
-            pca = PCA(20).fit(scale(pathway_exp))
+            pca = PCA(n_pc).fit(scale(pathway_exp))
             pcc = pca.components_
             pcc = pd.DataFrame(
                 pcc,
@@ -340,25 +324,15 @@ def remove_outliers(betas):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Main function for running spacia. There are several running modes and spacia will \
-            automatically decide which one to use based on the input parameters. Below are the four modes: \n\t\
-            (1) No aggregation: The user either provides one or several single genes, \
-            for sending/receiving pathways. These will be used in the analysis directly; \
-            These genes have to be positively correlated. \n\t\
-            (2) Correlation-driven aggregation: The users will provide a list of single genes. \
-            Each single gene will be expanded, in spacia internally, to a pathway, \
-            based on highly positively correlated genes. The user will provide a correlation cutoff \
-            to select the highly positively correlated genes for each seed gene; \n\t\
-            (3) Knowledge-driven aggregation: The users can provide a .csv file, \
-            detailing what genes to group into pathways, for sending/receiving pathways. \
-            Users can refer to CellChat, CellphoneDB and other appropriate resources to collect \
-            such pre-defined pathways and their member genes. But users need to take care to only \
-            include genes that are supposedly positively correlated in the same pathway; \n\t\
-            (4) Clustering-driven aggregation: If the users do not provide any information, \n\t\
-            spacia will perform un-supervised clustering and divide all genes into modules based on \
-            positive correlation, based on the positive correlation cutoff the users provided. \
-            Each module will be treated as a pathway.",
-    )
+        description="Main function for running spacia, which evaluates interactions within \
+            the context of cell neighborhoods, where the 'receiver' cells are the cells of interest, \
+            and the cells from the neighborhood are referred to as 'sender' cells. The interactant \
+            expressed in the receiver cells, through which the interactions are to be studied, are referred \
+            to as 'Response', while the interactant expressed in the sender cells that potentially \
+            influence the responder genes are called signal 'Signal'. The Goal of Spacia is to determine the \
+            possibility and maginitude of how 'signal' gene(s) in 'sender' cells affect \
+            'response' gene(s) in 'receiver' cells on a single cell level."
+)
 
     parser.add_argument(
         "counts",
@@ -368,30 +342,46 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "spot_meta",
-        help="Path for spot positional information, spots by features. TXT format. \
+        help="Path for spot positional information, spots by feature(s). TXT format. \
             must have 'X', 'Y' columns for coordinates. 'cell_type' columns is needed \
             if running with '-rc' and '-sc' parameters. 'cell_type' refers to the group designation of cells, \
             e.g., type of cells. The user can specify which group of cells to use for spacia"
     )
 
     parser.add_argument(
+        "--receiver_cluster",
+        "-rc",
+        type=str,
+        default=None,
+        help="Name of receiver cell_type, must be in spot_metadata.",
+    )
+
+    parser.add_argument(
+        "--sender_cluster",
+        "-sc",
+        type=str,
+        default=None,
+        help="Name of sender cell_type, must be in spot_metadata.",
+    )
+    
+    parser.add_argument(
         "--receiver_features",
         "-rf",
         type=str,
         default=None,
-        help="Receiver gene(s). Can be: \
-            1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
-            otherwise mode (2); \
-            2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
-            Spacia will run in mode (2); \
-            3) multiple genes, sep by '|' used together as one pathway. Spacia will \
-            run in mode (3); \
-            4) a csv file each row for a receiver pathway and columns are genes, \
-            first column contains pathways names. Spacia will run in mode (3) if \
-            the pathway contains multiple genes. If there is only one gene in the pathway,\
-            spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
-            4) 'all', spacia will use all genes in the count matrix; \
-            6) if nothing is passed, spacia will run in mode (4).",
+        help="Input for the 'response' feature in the receiver cells. Can be: \
+            1) a single gene as the 'response' feature. Works together with 'Corr_agg'; \
+            2) multiple genes, separated by ',', each correspond to a different 'response' feature. \
+            Works together with 'Corr_agg'; \
+            3) multiple genes, sep by '|' used together as one 'response' feature. \
+            'Corr_agg' if turned off in this mode; \
+            4) a csv file, each row correponds to a 'response' feature. \
+            The first column contains feature names, and the following columns are genes \
+            that together form the feature. 'Corr_agg' if turned off in this mode;\
+            5) 'pca', unsupervised mode, where the top ('num_comps') PCA embeddings are used as \
+            'response' feature(s). 'Corr_agg' if turned off in this mode; \
+            6) None, unsupervised mode, where the averaged expressions of gene clusters \
+            in the 'receiver' cells are used as 'response' feature(s)."
     )
 
     parser.add_argument(
@@ -399,49 +389,21 @@ if __name__ == "__main__":
         "-sf",
         type=str,
         default=None,
-        help="Sender gene(s). At least two pathways are recommended. Can be: \
-            1) a single gene. If 'corr_agg' is turned off, spacia will run in mode (1); \
-            otherwise mode (2); \
-            2) multiple genes, sep by ',' each is a seed of one receiver pathway. \
-            Spacia will run in mode (2); \
-            3) multiple genes, sep by '|' used together as one pathway. Spacia will \
-            run in mode (3); \
-            4) a csv file each row for a receiver pathway and columns are genes, \
-            the first column contains pathway names. Spacia will run in mode (3) if \
-            the pathway contains multiple genes. If there is only one gene in the pathway,\
-            spacia will run in mode (1) if 'corr_agg' is turned off otherwise in mode (2); \
-            5) if 'pca' is provided as input, use transform data using top 20 principle \
-            components and use each component as a sender pathway. \
-            6) if nothing is passed, spacia will run in mode (4).",
-    )
-
-    parser.add_argument (
-        "--pca_gene",
-        "-pg",
-        help = "Additional gene to be included in the pca mode. Note this will cause spacia \
-            to use only the 3 top pcs."
-    )
-    parser.add_argument(
-        "--output_path", "-o", type=str, default="spacia", help="Output path"
+        help="Input for the 'signal' feature in the sender cells. Usage is similar to\
+            '--receiver_features'",
     )
 
     parser.add_argument(
-        "--dist_cutoff",
-        "-d",
-        type=float,
-        default=None,
-        help="Distance cutoff for finding potential interacting cells.",
+        "--corr_agg",
+        "-ca",
+        action="store_false",
+        default=True,
+        help="This is a toggle to turn off correlation based aggregation. Correlation aggregation \
+            constructs 'response/signal' feature(s) based on expression of genes highly correlated \
+            with the input gene. If it is turned off, the 'response/signal' feature(s) equal to the \
+            expression of the input gene(s) ",
     )
-
-    parser.add_argument(
-        "--receiver_exp_cutoff",
-        "-rec",
-        type=str,
-        default=0.5,
-        help="Quantile cutoff used to threshold receiver expression. If 'auto', a bimodel \
-            distribution will be fitted to find the cutoff.",
-    )
-
+    
     parser.add_argument(
         "--num_corr_genes",
         "-nc",
@@ -449,6 +411,48 @@ if __name__ == "__main__":
         default=100,
         help="Number of correlated gene to use in calculating receiver pathway expression.\
             This option only matters if the user has not toggle off the 'corr_agg' option.",
+    )
+    
+    parser.add_argument(
+        "--corr_agg_method",
+        "-cm",
+        default='simple', # simple or weighted
+        help="How the receiver gene expression will be aggregated, if 'simple', expression of top positively \
+            correlated genes will be averaged. If 'weighted', expression of top genes ranked by absolute \
+            correlation will be averaged using the correlation values as weights.",
+    )
+    
+    parser.add_argument (
+        "--num_comps",
+        "-n_pc",
+        help = "Number of components to be used in the pca mode.",
+        default=20,
+        type=int
+    )
+    
+    parser.add_argument(
+        "--response_exp_cutoff",
+        "-rec",
+        type=str,
+        default=0.5,
+        help="Quantile cutoff used to threshold the 'response' feature(s). If 'auto', a bimodel \
+            distribution will be fitted to find the cutoff, and the cutoff will be calculated as \
+            the average of the two peak means.",
+    )
+    
+    parser.add_argument (
+        "--pca_gene",
+        "-pg",
+        help = "Additional gene to be included in the pca mode. Note this will cause spacia \
+            to use only the 3 top pcs."
+    )
+    
+    parser.add_argument(
+        "--dist_cutoff",
+        "-d",
+        type=float,
+        default=None,
+        help="Distance cutoff for finding potential interacting cells.",
     )
 
     parser.add_argument(
@@ -468,22 +472,6 @@ if __name__ == "__main__":
         help="MCMC parameters, four values packed here are {ntotal,nwarm,nthin,nchain}",
     )
 
-
-    parser.add_argument(
-        "--receiver_cluster",
-        "-rc",
-        type=str,
-        default=None,
-        help="Name of receiver cell_type, must be in spot_metadata.",
-    )
-
-    parser.add_argument(
-        "--sender_cluster",
-        "-sc",
-        type=str,
-        default=None,
-        help="Name of sender cell_type, must be in spot_metadata.",
-    )
     
     parser.add_argument(
         "--bag_size",
@@ -519,25 +507,6 @@ if __name__ == "__main__":
         help="Whether the model_input folder should be deleted.",
     )
 
-    parser.add_argument(
-        "--corr_agg",
-        "-ca",
-        action="store_false",
-        default=True,
-        help="This is a toggle to turn off correlation based aggregation. If it is \
-            turned off, spacia evaluate the effect of one gene in the sender cells on \
-            another gene in the receiver cells.",
-    )
-    
-    parser.add_argument(
-        "--corr_agg_method",
-        "-cm",
-        default='simple', # simple or weighted
-        help="How the receiver gene expression will be aggregated, if 'simple', top positively \
-            correlated genes will be averages. If 'weighted', top correlated genes by absolute \
-            correlation will be summed into the seed genes expression using weighted averages",
-    )
-
     parser.add_argument (
         "--plot_mcmc",
         action = "store_true",
@@ -561,6 +530,9 @@ if __name__ == "__main__":
          (e.g. png), or one of eps, ps, tex (pictex), pdf, jpeg, tiff, png, bmp, svg or wmf (windows only)"
     )
 
+    parser.add_argument(
+        "--output_path", "-o", type=str, default="spacia", help="Output path"
+    )
     ######## Setting up ########
     # Debug param
     
@@ -569,8 +541,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # args = parser.parse_args(
     #     [
-    #         '/home2/s190548/work_personal/software/cell2cell_inter/code/test/input/Counts.txt',
-    #         '/home2/s190548/work_personal/software/cell2cell_inter/code/test/input/spacia_metadata.txt',
+    #         '/endosome/work/InternalMedicine/s190548/Spacia/test/input/counts.txt',
+    #         '/endosome/work/InternalMedicine/s190548/Spacia/test/input/spacia_metadata.txt',
     #         '-rc', 'A',
     #         '-sc', 'B',
     #         '-rf', 'gene1',
@@ -578,7 +550,7 @@ if __name__ == "__main__":
     #         '-d', '5',
     #         '-m', '5000,2500,10,2',
     #         '-nc', '20',
-    #         '-o', '/home2/s190548/work_personal/software/cell2cell_inter/code/test/test_output'
+    #         '-o', '/endosome/work/InternalMedicine/s190548/Spacia/test'
     #         ])
     counts = args.counts
     spot_meta = args.spot_meta
@@ -592,8 +564,8 @@ if __name__ == "__main__":
     sender_features = args.sender_features
     top_corr_genes = args.num_corr_genes
     dist_cutoff = args.dist_cutoff
-    receiver_exp_cutoff = args.receiver_exp_cutoff
-    receiver_exp_cutoff = receiver_exp_cutoff if receiver_exp_cutoff == 'auto' else float(receiver_exp_cutoff)
+    response_exp_cutoff = args.response_exp_cutoff
+    response_exp_cutoff = response_exp_cutoff if response_exp_cutoff == 'auto' else float(response_exp_cutoff)
     mcmc_params = args.mcmc_params
     corr_agg = args.corr_agg
     ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
@@ -605,6 +577,7 @@ if __name__ == "__main__":
     bag_size = args.bag_size
     nb = args.number_bags
     pca_gene = args.pca_gene
+    n_pc = args.num_comps
     np.random.seed(0)
 
     # Checking inputs
@@ -712,6 +685,7 @@ if __name__ == "__main__":
         receiver_features, 
         sender_features,
         corr_agg_method,
+        n_pc,
         pca_gene
     )
     # If no receiver pathways are found, abort.
@@ -727,11 +701,13 @@ if __name__ == "__main__":
     # Calculate each receiver sender pair distances
     dist_r2s = r2s_matrix.to_frame().apply(
         lambda x: (cdist(
-            spot_meta.loc[x.name, :"Y"].values.reshape(-1, 2),
-            spot_meta.loc[x[0], :"Y"].values.reshape(-1, 2),
+            # fixed issue in pandas that makes it object
+            spot_meta.loc[[x.name], :"Y"].values.reshape(-1, 2),
+            spot_meta.loc[x.iloc[0], :"Y"].values.reshape(-1, 2),
         )[0]/dist_cutoff).round(5), # normalize distance to 0-1
         axis=1,
     )
+    
     sender_dist_dict = {}
     for i in dist_r2s.index:
         sender_dist_dict[i] = dist_r2s[i].tolist()
@@ -740,7 +716,7 @@ if __name__ == "__main__":
     meta_data = spot_meta.loc[receiver_candidates, :"Y"]
     meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
     meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
-    meta_data = meta_data.append(meta_data_senders)
+    meta_data = pd.concat([meta_data, meta_data_senders])
 
     # contruct and save sender exp
     if sender_features == 'pca':
@@ -807,9 +783,9 @@ if __name__ == "__main__":
         # Decide receiver exp cutoff
         # Debug codes
         # print(receiver_exp.head())
-        # print(receiver_exp_cutoff)
+        # print(response_exp_cutoff)
         rf_to_drop = []
-        if receiver_exp_cutoff == 'auto':
+        if response_exp_cutoff == 'auto':
             print(
                 'Estimating {} expression cutoff by fitting a bimodal distribution...'.format(rp)
                 )
@@ -841,7 +817,7 @@ if __name__ == "__main__":
                 # rf_to_drop.append(rp)
                 cutoff = receiver_exp.quantile(0.5)
         else:
-            cutoff = receiver_exp.quantile(receiver_exp_cutoff)
+            cutoff = receiver_exp.quantile(response_exp_cutoff)
     
         if plot_debug:
             receiver_exp.hist(bins=20,density=True)
@@ -961,7 +937,7 @@ if __name__ == "__main__":
         #     sender_pathways_names = list(sender_pathways_names) + ['dummy']
             
         res_beta.Sender_pathway = sender_pathways_names
-        pathways = pathways.append(res_beta)
+        pathways = pd.concat([pathways, res_beta])
 
         # aggregating primamy instances for different receiver pathways
         pip_res = pd.read_csv(
@@ -973,7 +949,7 @@ if __name__ == "__main__":
         _interactions = interactions_template.copy()
         _interactions.index = [job_id] * _interactions.shape[0]
         _interactions["Primary_instance_score"] = pip_res.values
-        interactions = interactions.append(_interactions)
+        interactions = pd.concat([interactions, _interactions])
 
         # aggregating b and FDR for different receiver pathways
         pred_b = (
@@ -987,7 +963,7 @@ if __name__ == "__main__":
         fdr.columns = ["Theta_cutoff", "FDR"]
         fdr.Theta_cutoff = fdr.Theta_cutoff / 10
         fdr["b"] = pred_b
-        b_plus_fdr = b_plus_fdr.append(fdr)
+        b_plus_fdr = pd.concat([b_plus_fdr, fdr])
 
         pathways.to_csv(os.path.join(output_path, "Pathway_betas.csv"))
         interactions.to_csv(os.path.join(output_path, "Interactions.csv"))

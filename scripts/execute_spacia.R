@@ -78,6 +78,9 @@ receiving_gene=opt$receivingGene
 cat(paste('receiving gene:', receiving_gene, '\n'))
 nSample = opt$nSample
 
+
+# important tuning parameters, users may need to play with them
+# runtime is very good with current selection of parameters
 if (is.null(opt$quantile) & is.null(opt$corCut)) {
   
   paramTable = read.csv(opt$paramTable)
@@ -123,7 +126,7 @@ thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
 Sys.time()
 cat('reading data...\n')
 options(scipen=999) 
-
+# do this in spacia
 meta=read.table(file.path(opt$inputDir, "spacia_spot_meta.txt"),stringsAsFactors = F,sep="\t")
 
 counts=read.csv(file.path(opt$inputDir, "cell_by_gene.csv"),stringsAsFactors=F)
@@ -199,7 +202,10 @@ signature=colMeans(counts_tumor[keep,names(exp_sender)]*cors[keep])
 exp_receiver=1*(signature>quantile(signature,exp_receiver_quantile))
 # users may want to do some trial and errors to choose the tuning parameters 
 # for a good "exp_receiver" 
-
+# for our pan-cancer spacia analyses, we may not have the luxury 
+# to choose parameters for all spacia runs 
+# across tumor cells, gene pairs, etc. 
+# for individual analyses, definitely tune
 maxBags = opt$subSample
 if (maxBags > 0) {
   if (nbags > maxBags) {
@@ -295,7 +301,8 @@ ind = 0
 ii = c()
 for (n in 1:nchain) {
   #start at ~20% of the MCMC cycles
-  i = round(nOutPerChain / 5)
+  # i = round(nOutPerChain / 5)
+  i = 1
   # inds = sample((ind + 1): (ind + nOutPerChain), nSample)
   #evenly sample to the end of each chain
   offsetI = (n -1) * nOutPerChain

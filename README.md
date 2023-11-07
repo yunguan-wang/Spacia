@@ -9,9 +9,7 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 ## Installation
 ### Dependency
 
-If you are on a macOS and do not have the Xcode Command Line Tools installed, please do so by running `xcode-select --install` in terminal.
-
-R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`.
+R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`, rjson.
 
 Python: `R>=3.8`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`.
 We strongly recommend using conda to manage the installation of all dependencies. To do this, simply run:
@@ -30,7 +28,7 @@ git clone [repo_path]
 
 The total installation time is around 10 minutes. If an error occurs, please upgrade pip and try again.
 
-#### Note:
+**Note**: If you are on a macOS and do not have the Xcode Command Line Tools installed, please do so by running `xcode-select --install` in terminal.
 
 ## Test installation
 Test Spacia using a simple test script by:
@@ -47,6 +45,17 @@ Test Succeeded.
 Testing Spacia with multiple genes as response feature and pca agg mode
 Test Succeeded.
 ```
+
+### About the test data
+
+The test data is a randomly generated dataset for the purpose of validating the installation only.
+
+The test itself contains ~2,500 cells and it should finish in 5 minutes.
+
+The purpose of the test is only to validate the installation, and the there is no interpretation associated with the test results.
+
+We have also included the simulation dataset used in our manuscript in `/data/simulation`
+
 ## Usage
 
 ### Definition of terms used in Spacia
@@ -69,7 +78,7 @@ Once the input data have been processed into the supported format, the full Spac
 python [path/to/spacia.py] counts.txt cell_metadata.txt -rc celltype1 sc celltype2 -rf gene1 sf gene2
 ```
 
-Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to be normalized, if not, CPM normalization will be used.
+Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to be normalized.
 
 `cell_metadata.txt` is a cell_by_metadata matrix in txt format in TXT format. Must contains `X` and `Y` columns for coordinates, and a `cell_type` column, referring to the group designation of cells, is needed if '-rc' or '-sc' parameters are given.
 
@@ -104,8 +113,14 @@ The list of genes can be passed as a string separated by "|", e.g., 'CD3E|CD4|CD
 
 `--output_path`: Output folder for spacia.
 
-For the see the output of ```python spacia.py -h``` for details.
+#### Output file format
+`Spacia.py` will output intermediated results from the core R model saved in each [Response_named] folders, as well as a set of files containing a high level summary of the final results. These files are `B_and_FDR.csv`, `Pathway_betas.csv`, and `Interactions.csv`.
 
+`B_and_FDR.csv` contains the **b** values of each response gene/pathway (first column) and the associated significance information.
+
+`Pathway_betas.csv` contains the **beta** values representing the interaction between each response gene/pathway (first column) and signal gene/pathway (second columns).
+
+`Interactions.csv` contains the primary instance scores of all receivers in each receiver-sender cell pair (second and third column) for each response-signal interaction (first column). 
 ### For advanced users
 For users who want to directly access the core of spacia and perform more flexible analyses, we provide an example R script that showcases the few key steps. But please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets. Our analysis codes of the prostate Merscope data (Fig. 4) are derived based on this R script. But the major pre-processing, inference, and post-processing steps shown in this R script are all consistent with those in our main spacia API.
 
