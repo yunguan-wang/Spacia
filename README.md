@@ -21,6 +21,8 @@ conda activate spacia
 conda install r-base=4.0 r-coda r-ggmcmc r-rcpp r-RcppArmadillo
 conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
 ```
+**Note** our versions of the key packages are: `matplotlib`=3.7.2,  `numpy`=1.24.3, `pandas`=2.0.3, `scikit-learn`=1.3.0, `scipy`=1.10.1.
+
 Then, download this repo.
 ```
 git clone [repo_path]
