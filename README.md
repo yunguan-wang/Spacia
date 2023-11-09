@@ -6,22 +6,37 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 
 ## Graphical abstract
 <img src="https://github.com/yunguan-wang/Spacia/blob/main/img/fig2b.png" height="300" width="1000">
+
 ## Installation
+This project requires R and Python with the following dependencies:
+
 ### Dependency
+- R: R>=4.0.5
+- Python: Python>=3.8
+  
+#### R Packages:
+- coda==0.19-4
+- ggmcmc==1.5.1.1
+- Rcpp==1.0.9
+- RcppArmadillo==0.11.2.3.1
+- rjson==0.2.21
+  
+#### Python Packages:
+- matplotlib==3.7.2
+- pandas==2.0.3
+- scipy==1.10.1
+- scikit-learn==1.3.0
+- numpy ==1.24.3
 
-R: `R>=4.0`, `coda`, `ggmcmc`, `rcpp`, `RcppArmadillo`, rjson.
+We strongly recommend using conda to manage the installation of all dependencies. To set up the environment and install specific versions, run the following commands:
 
-Python: `R>=3.8`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`.
-We strongly recommend using conda to manage the installation of all dependencies. To do this, simply run:
-
-```
+```bash
 conda create --name spacia
 conda activate spacia
-# conda config --add channels conda-forge ##If you do not have this channel added before#
-conda install r-base=4.0 r-coda r-ggmcmc r-rcpp r-RcppArmadillo
-conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
+# conda config --add channels conda-forge # If you do not have this channel added before
+conda install r-base=4.0.5 r-coda=0.19-4 r-ggmcmc=1.5.1.1 r-rcpp=1.0.9 r-RcppArmadillo=0.11.2.3.1 r-rjson=0.2.21
+conda install python=3.8 pandas=2.0.3 scikit-learn=1.3.0 numpy=1.24.3 scipy=1.10.1 matplotlib=3.7.2
 ```
-**Note** our versions of the key packages are: `matplotlib`=3.7.2,  `numpy`=1.24.3, `pandas`=2.0.3, `scikit-learn`=1.3.0, `scipy`=1.10.1.
 
 Then, download this repo.
 ```
@@ -47,6 +62,8 @@ Test Succeeded.
 Testing Spacia with multiple genes as response feature and pca agg mode
 Test Succeeded.
 ```
+
+**Note**: You may get some warning messages from the Rcpp package, but this does not affect the performance of the software.
 
 ### About the test data
 
@@ -145,4 +162,4 @@ Noah Chang, wooyong.chang@utsouthwestern.edu
 James Zhu, james.zhu@utsouthwestern.edu
 
 Yunguan Wang, yunguan.wang@cchmc.org
->>>>>>> Stashed changes
+
