@@ -145,7 +145,7 @@ MICProB_sampler<-function(tidytrain,
       if(iter %in% seq(round(tick*nwarm),nwarm,by=round(tick*nwarm))){
         cat(100*iter/nwarm,"% ...")
       }
-      mcmc_res <- MICProB_1Gibbs_cpp(Xb = X1[,2,drop=F],Xbeta=X1[,-c(1,2)],
+      mcmc_res <- MICProB_1Gibbs_cpp(Xb = X1[,2,drop=F],Xbeta=X1[,-c(1,2), drop = F],
                                      y = y,
                                       ninst = m,
                                       hp_mu_beta = hp_mu_beta,
@@ -190,7 +190,7 @@ MICProB_sampler<-function(tidytrain,
       if(iter %in% seq(round(tick*niter),niter,by=round(tick*niter))){
         cat(100*iter/niter,"% ...")
       }
-      mcmc_res <- MICProB_1Gibbs_cpp(Xb = X1[,2,drop=F],Xbeta=X1[,-c(1,2)],
+      mcmc_res <- MICProB_1Gibbs_cpp(Xb = X1[,2,drop=F],Xbeta=X1[,-c(1,2), drop = F],
                                      y = y,
                                       ninst = m,
                                       hp_mu_beta = hp_mu_beta,
