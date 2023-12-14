@@ -60,14 +60,22 @@ def cal_norm_dispersion(cts):
     return df.means.values, df.dispersions_norm.values
 
 def calculate_neighbor_radius(
-    spot_meta, sample_size=1000, target_n_neighbors=10, margin=10, r_min=1, r_max=1000
+    spot_meta, r_cells, s_cells, sample_size=1000, target_n_neighbors=10,
 ):
-    r_samples = (
-        spot_meta.loc[np.random.choice(spot_meta.index, sample_size, False)]
-        .copy()
-        .loc[:, ["X", "Y"]]
-    )
-    r_sample_dist = cdist(r_samples, spot_meta.loc[:, ["X", "Y"]])
+    r_spot_meta = spot_meta.loc[r_cells]
+    s_spot_meta = spot_meta.loc[s_cells]
+    if sample_size >= r_spot_meta.shape[0]:
+        r_samples = spot_meta
+    else:
+        r_samples = (
+            r_spot_meta.loc[np.random.choice(r_cells, sample_size, False)]
+            .copy()
+            .loc[:, ["X", "Y"]]
+        )
+    r_sample_dist = cdist(r_samples, s_spot_meta.loc[:, ["X", "Y"]])
+    r_min = np.min(r_sample_dist)
+    r_max = np.max(r_sample_dist)
+    margin = np.std(r_sample_dist)*0.01
     n_steps = 1
     while n_steps <= 100:
         r_next = (r_max + r_min) / 2
@@ -535,23 +543,22 @@ if __name__ == "__main__":
     )
     ######## Setting up ########
     # Debug param
-    
+    # args = parser.parse_args(
+    #     [
+    #         '/project/shared/xiao_wang/projects/cell2cell_inter/data/cosmx/results/nl_cpm.txt',
+    #         '/project/shared/xiao_wang/projects/cell2cell_inter/data/cosmx/results/nl_cpm_metadata.txt',
+    #         '-rc', 'Hep',
+    #         '-sc', 'Inflammatory.macrophages',
+    #         '-rf', 'nl_Hep_pathways.csv',
+    #         '-sf', 'nl_Inflammatory.macrophages_pathways.csv',
+    #         '-n', '25',
+    #         '-b', '2',
+    #         # '-nc', '20',
+    #         # '-o', '/endosome/work/InternalMedicine/s190548/Spacia/test'
+    #         ])
 #%%
     ######## Setting up ########
     args = parser.parse_args()
-    # args = parser.parse_args(
-    #     [
-    #         '/endosome/work/InternalMedicine/s190548/Spacia/test/input/counts.txt',
-    #         '/endosome/work/InternalMedicine/s190548/Spacia/test/input/spacia_metadata.txt',
-    #         '-rc', 'A',
-    #         '-sc', 'B',
-    #         '-rf', 'gene1',
-    #         '-sf', 'gene2,gene3',
-    #         '-d', '5',
-    #         '-m', '5000,2500,10,2',
-    #         '-nc', '20',
-    #         '-o', '/endosome/work/InternalMedicine/s190548/Spacia/test'
-    #         ])
     counts = args.counts
     spot_meta = args.spot_meta
     receiver_cluster = args.receiver_cluster
@@ -633,16 +640,6 @@ if __name__ == "__main__":
         cpm = counts
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
 
-    # find candidate receiver and sender cells
-    if dist_cutoff is None:
-        dist_cutoff = calculate_neighbor_radius(
-            spot_meta.iloc[:, :2], target_n_neighbors=n_neighbors
-        )
-        print(
-            "Maximal distance for {} expected neighbors is {:.2f}".format(
-                n_neighbors, dist_cutoff
-            )
-    )
     # catch error where a wrong cell cluster name is provided.
     for c_name in [receiver_cluster, sender_cluster]:
         if c_name not in spot_meta.cell_type.unique():
@@ -659,6 +656,17 @@ if __name__ == "__main__":
         raise ValueError(
             "Must provide both receiver and sender clusters, or a file with their ids."
         )
+        
+    # find candidate receiver and sender cells
+    if dist_cutoff is None:
+        dist_cutoff = calculate_neighbor_radius(
+            spot_meta.iloc[:, :2], r_cells, s_cells, target_n_neighbors=n_neighbors, 
+        )
+        print(
+            "Maximal distance for {} expected neighbors is {:.2f}".format(
+                n_neighbors, dist_cutoff
+            )
+    )
 
     r2s_matrix = find_sender_candidates(
         r_cells, s_cells, spot_meta[["X", "Y"]], dist_cutoff
@@ -742,7 +750,7 @@ if __name__ == "__main__":
         
     sender_exp = (
         r2s_matrix.to_frame()
-        .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(5).tolist(), axis=1)
+        .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(3).tolist(), axis=1)
         .to_dict()
     )
     
@@ -888,8 +896,13 @@ if __name__ == "__main__":
     with open(dist_sender_fn, "w") as fp:
         json.dump(sender_dist_dict, fp)
         
+    # with open(exp_sender_fn, "w") as fp:
+    #     json.dump(sender_exp, fp)
     with open(exp_sender_fn, "w") as fp:
-        json.dump(sender_exp, fp)
+        for k, v in sender_exp.items():
+            _dict = {k:v}
+            json.dump(_dict, fp)
+            fp.write('\n')
     
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
