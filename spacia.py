@@ -14,6 +14,7 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import scale
 from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
+from scipy import stats 
 
 def spacia_worker(cmd):
     """
@@ -92,7 +93,6 @@ def calculate_neighbor_radius(
         elif (n_neighbors > target_n_neighbors) == (nn_r_min > target_n_neighbors):
             r_min = r_next
     return r_next
-
 
 def find_sender_candidates(r_cells, s_cells, locations, dist_cutoff=30):
     """
@@ -328,6 +328,90 @@ def remove_outliers(betas):
     outlier_rows = list(set(outlier_rows))
     betas = betas[~betas.index.isin(outlier_rows)]
     return betas
+
+def process_b(df_b, spacia_res_path, chain_size, n_chains):
+    df_b = df_b.groupby(df_b.index).first()
+    remove = [x*chain_size for x in range(n_chains)]
+    indiv_results = df_b.index.unique()
+    planned = os.listdir(spacia_res_path)
+    for fn in [
+        'Interactions.csv', 'B_and_FDR.csv', 'spacia_log.txt', 
+        'Pathway_betas.csv', 'spacia_r.log', 'model_input']:
+        try:
+            planned.remove(fn)
+        except:
+            continue
+    if len([x for x in planned if x not in indiv_results]) > 0:
+        print('Warning!! ',
+            [x for x in planned if x not in indiv_results],
+            ' are not found in results!!!')
+    for fn in indiv_results:
+        fn_b = os.path.join(spacia_res_path, fn, fn + '_b.txt')
+        if not os.path.exists(fn_b):
+            print(fn_b, ' is not found!!')
+            continue
+        # print(fn_b)
+        indiv_b = pd.read_csv(fn_b, header=None, sep='\t', skiprows=1).iloc[:,2]
+        indiv_b = indiv_b[~indiv_b.index.isin(remove)]
+        arr = []
+        for i in range(n_chains):
+            chain_df = indiv_b[chain_size*i:chain_size*(i+1)]
+            arr += chain_df.sample(50, replace=False).tolist()
+        arr = np.array(arr)
+        pval = stats.ttest_1samp(arr, 0, alternative='less')[1]
+        df_b.loc[fn, 'pval'] = pval
+    return df_b
+
+def process_beta(
+    pathway_beta, spacia_res_path, chain_size, n_chains, mode = 'pca'):
+    indiv_results = pathway_beta.index.unique()
+    remove = [x*chain_size for x in range(n_chains)]
+    if mode == 'pca':
+        pathway_beta = {
+            'RG':[], 
+            'Sender_pathway': [], 
+            'Beta': [],
+            'pval': [],
+        }
+    for rg in indiv_results:
+        fn_beta = os.path.join(spacia_res_path, rg, rg + '_beta.txt')
+        if not os.path.exists(fn_beta):
+            continue
+        df_beta = pd.read_csv(fn_beta, sep='\t').reset_index().iloc[:,1:]
+        df_beta = df_beta[~df_beta.index.isin(remove)]
+        if mode == 'pca':
+            pca_loadings = pd.read_csv(
+                os.path.join(spacia_res_path, 'model_input','sender_pc.csv'),index_col=0)
+            df_beta = pd.DataFrame(
+                np.matmul(
+                    df_beta.values,
+                    pca_loadings.values),
+                columns = pca_loadings.columns
+                )
+        else:
+            df_beta.columns = pathway_beta.Sender_pathway.unique()
+        for gene in df_beta.columns:
+            arr = []
+            for i in range(n_chains):
+                chain_df = df_beta[chain_size*i:chain_size*(i+1)][gene]
+                arr += chain_df.sample(50, replace=False).tolist()
+            arr = np.array(arr)
+            mean_beta = df_beta[gene].mean()
+            pval = stats.ttest_1samp(arr, 0)[1]
+            if mode == 'pca':
+                for key, val in zip(
+                    pathway_beta.keys(),
+                    [rg,gene,mean_beta,pval]
+                    ):
+                    pathway_beta[key].append(val)
+            else:
+                pathway_beta.loc[
+                    (pathway_beta.index==rg) & (pathway_beta.Sender_pathway==gene),
+                    'pval'
+                    ] = pval
+    if mode == 'pca':
+        pathway_beta = pd.DataFrame(pathway_beta).set_index('RG')
+    return pathway_beta
 #%%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -452,7 +536,7 @@ if __name__ == "__main__":
         "--pca_gene",
         "-pg",
         help = "Additional gene to be included in the pca mode. Note this will cause spacia \
-            to use only the 3 top pcs."
+            to use only the 3 top pcs. Experimental."
     )
     
     parser.add_argument(
@@ -575,7 +659,7 @@ if __name__ == "__main__":
     response_exp_cutoff = response_exp_cutoff if response_exp_cutoff == 'auto' else float(response_exp_cutoff)
     mcmc_params = args.mcmc_params
     corr_agg = args.corr_agg
-    ntotal, nwarm, nthin, nchain = mcmc_params.split(",")
+    ntotal, nwarm, nthin, nchain = [int(x) for x in mcmc_params.split(",")]
     keep = args.keep_intermediate
     plot_mcmc = 'T' if args.plot_mcmc else 'F'
     ext = args.ext
@@ -594,7 +678,10 @@ if __name__ == "__main__":
     intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
         os.makedirs(intermediate_folder)
-
+    dist_sender_fn = os.path.join(intermediate_folder, "dist_sender.json")
+    metadata_fn = os.path.join(intermediate_folder, "metadata.txt")
+    exp_sender_fn = os.path.join(intermediate_folder, "exp_sender.json")
+    
     # Setting up logs
     log_fn = os.path.join(output_path, "spacia_log.txt")
     if os.path.exists(log_fn):
@@ -703,9 +790,6 @@ if __name__ == "__main__":
         raise ValueError()
         
     print('Writing spacia_job.R inputs to the model_input folder.')
-    dist_sender_fn = os.path.join(intermediate_folder, "dist_sender.json")
-    metadata_fn = os.path.join(intermediate_folder, "metadata.txt")
-    exp_sender_fn = os.path.join(intermediate_folder, "exp_sender.json")
     # Calculate each receiver sender pair distances
     dist_r2s = r2s_matrix.to_frame().apply(
         lambda x: (cdist(
@@ -942,13 +1026,6 @@ if __name__ == "__main__":
         res_beta = res_beta.reset_index()
         res_beta.index = [job_id] * res_beta.shape[0]
         res_beta.columns = ["Sender_pathway", "Beta"]
-        
-        # no longer needed
-        # # Fix an issue where there is only one sender pathway and the sender_exp
-        # # has a dummy pathway expression.
-        # if len(sender_pathways_names) == 1:
-        #     sender_pathways_names = list(sender_pathways_names) + ['dummy']
-            
         res_beta.Sender_pathway = sender_pathways_names
         pathways = pd.concat([pathways, res_beta])
 
@@ -977,10 +1054,17 @@ if __name__ == "__main__":
         fdr.Theta_cutoff = fdr.Theta_cutoff / 10
         fdr["b"] = pred_b
         b_plus_fdr = pd.concat([b_plus_fdr, fdr])
-
-        pathways.to_csv(os.path.join(output_path, "Pathway_betas.csv"))
-        interactions.to_csv(os.path.join(output_path, "Interactions.csv"))
-        b_plus_fdr.to_csv(os.path.join(output_path, "B_and_FDR.csv"))
+        
+    # update pathway_betas
+    c_l = int((ntotal-nwarm)/nthin)
+    agg_mode = 'pca' if receiver_features == 'pca' else 'gene'
+    pathways = process_beta(pathways.copy(), output_path, c_l, nchain,agg_mode)
+    pathways.to_csv(os.path.join(output_path, "Pathway_betas.csv"))
+    
+    interactions.to_csv(os.path.join(output_path, "Interactions.csv"))
+    # calculate p values for b
+    b_plus_fdr = process_b(b_plus_fdr.copy(), output_path, c_l, nchain)
+    process_b.to_csv(os.path.join(output_path, "B_and_FDR.csv"))
     
     # Remove model_input files
     if not keep:
