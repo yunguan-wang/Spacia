@@ -1064,7 +1064,7 @@ if __name__ == "__main__":
     interactions.to_csv(os.path.join(output_path, "Interactions.csv"))
     # calculate p values for b
     b_plus_fdr = process_b(b_plus_fdr.copy(), output_path, c_l, nchain)
-    process_b.to_csv(os.path.join(output_path, "B_and_FDR.csv"))
+    b_plus_fdr.to_csv(os.path.join(output_path, "B_and_FDR.csv"))
     
     # Remove model_input files
     if not keep:
