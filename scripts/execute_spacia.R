@@ -232,12 +232,13 @@ source(paste(spacia_path,'MIL_wrapper.R', sep=''))
 
 cat('running spacia...\n')
 Sys.time()
+# this is the core input of spacia. You just need to massage your data into this format for running spacia
 results=MIL_C2Cinter(exp_receiver,pos_sender,exp_sender,
                      ntotal,nwarm,nthin,nchain,thetas, 1)
 Sys.time()
 
 cat('processing results...\n')
-# this is important
+# this is important. running in the PCA mode is suggested
 # rotation: the contribution of each sending gene expression to each PC
 # beta: the contribution of each PC to receiving gene expression
 # sum(rotation*beta): the contribution of each sending gene
