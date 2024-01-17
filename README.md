@@ -132,14 +132,23 @@ The list of genes can be passed as a string separated by "|", e.g., 'CD3E|CD4|CD
 `--output_path`: Output folder for spacia.
 
 #### Output file format
-`Spacia.py` will output intermediated results from the core R model saved in each [Response_named] folders, as well as a set of files containing a high level summary of the final results. These files are `B_and_FDR.csv`, `Pathway_betas.csv`, and `Interactions.csv`.
+The primary output of Spacia is a set of files containing a high level summary of the final results. These files are `B_and_FDR.csv`, `Pathway_betas.csv`, and `Interactions.csv`.
 
 `B_and_FDR.csv` contains the **b** values of each response gene/pathway (first column) and the associated significance information.
 
 `Pathway_betas.csv` contains the **beta** values representing the interaction between each response gene/pathway (first column) and signal gene/pathway (second columns).
 
 `Interactions.csv` contains the primary instance scores of all receivers in each receiver-sender cell pair (second and third column) for each response-signal interaction (first column). 
+
 ### For advanced users
+Spacia also saves the intermediate results in each `Response_name` folder, which are summarized into the primary output. These files include:
+
+Diagnostic plots in pdf formats reporting the behavior of each MCMC chains.
+
+Values of **b** and **beta** as calculated during each MCMC iteration/chain. `[Response_name]_[b/beta].txt`
+
+Primary instance scores between each receiver and sender, in long format. To decode this, please refer to the `model_input/metadata.txt` file, and flatten the `Sender_cells` column. You can do this in `Pandas` using the `str.split` and `explod` functions.
+
 For users who want to directly access the core of spacia and perform more flexible analyses, we provide an example R script that showcases the few key steps. But please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets. Our analysis codes of the prostate Merscope data (Fig. 4) are derived based on this R script. But the major pre-processing, inference, and post-processing steps shown in this R script are all consistent with those in our main spacia API.
 
 ```
