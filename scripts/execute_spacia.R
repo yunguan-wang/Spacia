@@ -172,11 +172,12 @@ xy_fibro=t(as.matrix(meta_fibro[,c("X","Y")]))
 Sys.time()
 
 #find pos and exp of senders within dist_cutoff
+dist_cutoff2 = dist_cutoff^2
 for (i in 1:dim(counts_tumor)[2])
 {
   #slow with large num. of sender cells
-  dist_tumor_fibro=colSums((xy_tumor[,i]-xy_fibro)^2)^0.5
-  keep=dist_tumor_fibro<dist_cutoff
+  dist_tumor_fibro=colSums((xy_tumor[,i]-xy_fibro)^2)
+  keep=dist_tumor_fibro<dist_cutoff2
   if (sum(keep)<min_instance) {next}
   pos_sender[[rownames(meta_tumor)[i]]]=log(dist_tumor_fibro[keep]) # critical (log)
   exp_sender[[rownames(meta_tumor)[i]]]=pca_fibro[keep,1:n_path]
