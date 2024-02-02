@@ -150,18 +150,18 @@ Values of **b** and **beta** as calculated during each MCMC iteration/chain. `[R
 
 Primary instance scores between each receiver and sender, in long format. To decode this, please refer to the `model_input/metadata.txt` file, and flatten the `Sender_cells` column. You can do this in `Pandas` using the `str.split` and `explod` functions.
 
-(2) For users who want to directly access the core of spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an example R script that showcases the few key steps. But please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets. This script showcases our suggested pipeline of data processing, and the codes should be self-explanatory enough. Our analysis codes of the prostate Merscope data (Fig. 4) are derived based on this R script. But the major pre-processing, inference, and post-processing steps shown in this R script are overall consistent with those in our main spacia API. We expect different SRT technologies to generate data in different formats and the data are also of different qualities. We suggest the users to perform data pre-processing and thorough quality filtering on their own, and massage the filtered data in the right format to feed into the core of spacia, for maximum performance. We also provide example data and parameters under `scripts/testData` to test the R script. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
+(2) For users who want to directly access the core of spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an example R script that showcases the few key steps. But please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets. This script showcases our suggested pipeline of data processing, and the codes should be self-explanatory enough. Our analysis codes of the prostate Merscope data (Fig. 4) are derived based on this R script. But the major pre-processing, inference, and post-processing steps shown in this R script are overall consistent with those in our main spacia API. We expect different SRT technologies to generate data in different formats and the data are also of different qualities. We suggest the users to perform data pre-processing and thorough quality filtering on their own, and massage the filtered data in the right format to feed into the core of spacia, for maximum performance. We also provide example data and parameters under `test/input/rscript_test_data` to test the R script. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
 
 ```
 export dir=[path/to/Spacia]
 Rscript $dir/scripts/execute_spacia.R \
-	-x $dir/scripts/testData/example_counts.csv -C \
-	-m $dir/scripts/testData/example_meta.csv \
+	-x $dir/test/input/rscript_test_data/example_counts.csv -C \
+	-m $dir/test/input/rscript_test_data/example_meta.csv \
 	-a $dir/spacia \
 	-r Tumor_cells -s Fibroblasts -g ACKR3 \
 	-q 0.76 -u 0.179 \
 	-l 5000 -w 2500 \
-	-o [path/to/output]/Fibroblasts-Tumor_cells_ACKR3
+	-o $dir/test/rscript_test/Fibroblasts-Tumor_cells_ACKR3
 ```
 Use `-h` or `--help` to see detailed descriptions of options and inputs.
 
