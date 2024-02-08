@@ -5,7 +5,7 @@ library("optparse")
 option_list = list(
   make_option(c("-x", "--inputExpression"), type="character", 
               default=NULL, 
-              help='gene expression matrix [default = %default]\n\t\t\tFormat: cell x gene expression values. Column names should be "cell" followed by gene names. Expects normalized, log-transformed data, also use "-C" if using counts instead',
+              help='gene expression matrix [default = %default]\n\t\t\tFormat: cell x gene expression values. Column names should be "cell" followed by gene names. Same as in spacia.py, expression values should be normalized and log-transformed. Option "-C" can be used if using raw counts to perform a simple transformation',
               metavar="character"),
   make_option(c("-m", "--inputMeta"), type="character", 
               default=NULL, 
