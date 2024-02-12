@@ -96,7 +96,7 @@ Once the input data have been processed into the supported format, the full Spac
 python [path/to/spacia.py] counts.txt cell_metadata.txt -rc celltype1 sc celltype2 -rf gene1 sf gene2
 ```
 
-Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to be normalized.
+Here, `counts.txt` is a cell-by-gene matrix in TX format. We expect the data to be normalized as log1p(cpm).
 
 `cell_metadata.txt` is a cell_by_metadata matrix in txt format in TXT format. Must contains `X` and `Y` columns for coordinates, and a `cell_type` column, referring to the group designation of cells, is needed if '-rc' or '-sc' parameters are given.
 
