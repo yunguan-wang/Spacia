@@ -1,6 +1,11 @@
 library(Rcpp)
 library(rjson)
 library("optparse")
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(gridExtra)
+library(dplyr)
 
 option_list = list(
   make_option(c("-x", "--inputExpression"), type="character", 
@@ -65,6 +70,7 @@ if (is.null(opt$output)) {
 } else{
   outFn = opt$output
 }
+
 dir.create(dirname(outFn), showWarnings = FALSE, recursive = T)
 rDataFn = paste(outFn, '.RData', sep = '')
 if (file.exists(rDataFn)) {
@@ -75,7 +81,30 @@ if (file.exists(rDataFn)) {
     stop('*********terminating run: found existing output*********\n')
   }
 }
+#load cached data
+loadedCache = FALSE
+cacheFn = paste(outFn, '_cache.RData', sep = '')
+if (file.exists(cacheFn)) {
+  if (opt$overwrite) {
+    cat('ignoring existing cache...\n')
+  } else{
+    Sys.time()
+    cat('loading from existing cache...\n')
+    load(cacheFn)
+    loadedCache = TRUE
+  }
+}
 # choose dataset, cell type pairs and genes to investigate
+if (loadedCache) {
+  tmpCheck = c(sending_cell_type != opt$sendingCell,
+               receiving_cell_type != opt$receivingCell,
+               receiving_gene != opt$receivingGene,
+               n_path != opt$path
+               )
+  if (any(tmpCheck)) {
+    stop('*********terminating run: input mismatch with cache file; use -f to ignore cache*********\n')
+  }
+} 
 sending_cell_type = opt$sendingCell
 cat(paste('sending cells:', sending_cell_type, '\n'))
 receiving_cell_type = opt$receivingCell
@@ -83,21 +112,26 @@ cat(paste('receiving cells:', receiving_cell_type, '\n'))
 receiving_gene=opt$receivingGene
 cat(paste('receiving gene:', receiving_gene, '\n'))
 nSample = opt$nSample
-
+runPlotOnly = FALSE
 # important tuning parameters, users may need to play with them
 if (is.null(opt$quantile) & is.null(opt$corCut)) {
-  #if using csv
-  paramTable = read.csv(opt$paramTable)
-  tmp = paramTable[paramTable$gene_name == receiving_gene, ]
-  if (dim(tmp)[1] == 1) {
-    cor_cutoff = tmp$cor_cutoff
-    exp_receiver_quantile = tmp$quantile_cutoff
-    writeLines(paste('found ', receiving_gene, ':\n\tcor_cutoff: ', cor_cutoff, 
-                     '\n\texp_receiver_quantile: ', exp_receiver_quantile, sep = ''))
-  } else if (dim(tmp)[1] == 0){
-    stop(paste('error:', receiving_gene, 'not found in table'))
-  }else if (dim(tmp)[1] > 1){
-    stop(paste('error: multiple matches for', receiving_gene, 'found in table; check table'))
+  if (is.null(opt$paramTable)) {
+    #run plots to help determine cutoffs
+    runPlotOnly = TRUE
+  } else {
+    #if using csv
+    paramTable = read.csv(opt$paramTable)
+    tmp = paramTable[paramTable$gene_name == receiving_gene, ]
+    if (dim(tmp)[1] == 1) {
+      cor_cutoff = tmp$cor_cutoff
+      exp_receiver_quantile = tmp$quantile_cutoff
+      writeLines(paste('found ', receiving_gene, ':\n\tcor_cutoff: ', cor_cutoff, 
+                       '\n\texp_receiver_quantile: ', exp_receiver_quantile, sep = ''))
+    } else if (dim(tmp)[1] == 0){
+      stop(paste('error:', receiving_gene, 'not found in table'))
+    }else if (dim(tmp)[1] > 1){
+      stop(paste('error: multiple matches for', receiving_gene, 'found in table; check table'))
+    }
   }
 } else{
   cor_cutoff = opt$corCut
@@ -123,67 +157,147 @@ cat(paste('nthin:', nthin, '\n'))
 nchain=opt$nchain
 cat(paste('nchain:', nchain, '\n'))
 thetas=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
-
-########  read and pre-process data  ############
-Sys.time()
-cat('reading data...\n')
-options(scipen=999) 
-# do this in spacia
-meta=read.csv(opt$inputMeta, row.names = 1, stringsAsFactors=F)
-counts=read.csv(opt$inputExpression, row.names = 1, stringsAsFactors=F)
-Sys.time()
-cat('pre-processing data...\n')
-#process count data
-if (opt$isCount) {
-  counts=as.matrix(counts[,-1])
-  counts=t(t(counts)/colMeans(counts)) # norm
-  counts=log1p(counts) # log
+if (!loadedCache) {
+  ########  read and pre-process data  ############
+  Sys.time()
+  cat('reading data...\n')
+  options(scipen=999) 
+  # do this in spacia
+  meta=read.csv(opt$inputMeta, row.names = 1, stringsAsFactors=F)
+  counts=read.csv(opt$inputExpression, row.names = 1, stringsAsFactors=F)
+  Sys.time()
+  cat('pre-processing data...\n')
+  #process count data
+  if (opt$isCount) {
+    counts=as.matrix(counts[,-1])
+    counts=t(t(counts)/colMeans(counts)) # norm
+    counts=log1p(counts) # log
+  }
+  counts=t(counts) 
+  # make sure the scale of each gene's expression is the same
+  counts=counts[apply(counts,1,sd)>0,] 
+  counts=counts/apply(counts,1,sd) 
+  #check cell names
+  if (sum(!rownames(meta) %in% colnames(counts))>0) 
+    {stop("Cell name mismatch!")} 
+  counts=counts[,rownames(meta)]
+  #filter to correct cell types
+  meta_receiver=meta[meta$cell_type==receiving_cell_type,]
+  counts_receiver=counts[,rownames(meta_receiver)]
+  cat(paste('\treceiving cells:', dim(meta_receiver)[1], '\n'))
+  meta_sender=meta[meta$cell_type==sending_cell_type,]
+  counts_sender=counts[,rownames(meta_sender)]
+  cat(paste('\tsending cells:', dim(meta_sender)[1], '\n'))
+  
+  # 1. first aggregate all potential sedning genes to a few dozen principal components
+  # 2. run spacia
+  # 3. revert spacia results back to gene level
+  Sys.time()
+  cat('calculating pca...\n')
+  pca_sender=prcomp(t(counts_sender))$x
+  Sys.time()
+  cat('processing pca...\n')
+  pca_sender=t(t(pca_sender)/apply(pca_sender,2,sd)) # do this in spacia
+  Sys.time()
+  cat('constructing bags...\n')
+  pos_sender=exp_sender=list()
+  xy_receiver=t(as.matrix(meta_receiver[,c("X","Y")]))
+  xy_sender=t(as.matrix(meta_sender[,c("X","Y")]))
+  Sys.time()
+  #find pos and exp of senders within dist_cutoff
+  dist_cutoff2 = dist_cutoff^2
+  for (i in 1:dim(counts_receiver)[2])
+  {
+    dist_receiver_sender=colSums((xy_receiver[,i]-xy_sender)^2)
+    keep=dist_receiver_sender<dist_cutoff2
+    if (sum(keep)<min_instance) {next}
+    pos_sender[[rownames(meta_receiver)[i]]]=log(dist_receiver_sender[keep]) # critical (log)
+    exp_sender[[rownames(meta_receiver)[i]]]=pca_sender[keep,1:n_path]
+  }
+  nbags = length(pos_sender)
+  cat("Total number of receiving cells:",dim(meta_receiver)[1],"\n")
+  cat("Successfully constructed bags:",nbags,"\n")
+  Sys.time()
 }
-counts=t(counts) 
-# make sure the scale of each gene's expression is the same
-counts=counts[apply(counts,1,sd)>0,] 
-counts=counts/apply(counts,1,sd) 
-#check cell names
-if (sum(!rownames(meta) %in% colnames(counts))>0) 
-  {stop("Cell name mismatch!")} 
-counts=counts[,rownames(meta)]
-#filter to correct cell types
-meta_receiver=meta[meta$cell_type==receiving_cell_type,]
-counts_receiver=counts[,rownames(meta_receiver)]
-cat(paste('\treceiving cells:', dim(meta_receiver)[1], '\n'))
-meta_sender=meta[meta$cell_type==sending_cell_type,]
-counts_sender=counts[,rownames(meta_sender)]
-cat(paste('\tsending cells:', dim(meta_sender)[1], '\n'))
 
-# 1. first aggregate all potential sedning genes to a few dozen principal components
-# 2. run spacia
-# 3. revert spacia results back to gene level
-Sys.time()
-cat('calculating pca...\n')
-pca_sender=prcomp(t(counts_sender))$x
-Sys.time()
-cat('processing pca...\n')
-pca_sender=t(t(pca_sender)/apply(pca_sender,2,sd)) # do this in spacia
-Sys.time()
-cat('constructing bags...\n')
-pos_sender=exp_sender=list()
-xy_receiver=t(as.matrix(meta_receiver[,c("X","Y")]))
-xy_sender=t(as.matrix(meta_sender[,c("X","Y")]))
-Sys.time()
-#find pos and exp of senders within dist_cutoff
-for (i in 1:dim(counts_receiver)[2])
-{
-  #slow with large num. of sender cells
-  dist_receiver_sender=colSums((xy_receiver[,i]-xy_sender)^2)^0.5
-  keep=dist_receiver_sender<dist_cutoff
-  if (sum(keep)<min_instance) {next}
-  pos_sender[[rownames(meta_receiver)[i]]]=log(dist_receiver_sender[keep]) # critical (log)
-  exp_sender[[rownames(meta_receiver)[i]]]=pca_sender[keep,1:n_path]
+if (runPlotOnly) {
+  save(counts_receiver,counts_sender, pos_sender, exp_sender, pca_sender, 
+       nbags, sending_cell_type, receiving_cell_type, receiving_gene, 
+       ntotal, nwarm, nthin, nchain, thetas, n_path,
+       file = cacheFn)
+  plotCutoffs <- function(receiving_gene, file_path, counts_receiver, 
+                          exp_sender, pca_sender, n_path) {
+    quantile_cutoffs = 1:12
+    quantile_cutoffs = (quantile_cutoffs - 1) / 11
+    quantile_cutoffs = quantile_cutoffs[2:11]
+    # pca_cum = summary(pca_sender)$importance[3,n_path]*100
+    df <- data.frame(matrix(ncol = 4, nrow = 0))
+    x <- c("signature", "cor_cutoff", "receiver_quantile", "xintercept")
+    colnames(df) <- x
+    cors=cor(counts_receiver[receiving_gene,],t(counts_receiver))[1,]
+    # Find the combination that yields 5~20 highly correlated genes
+    searchgrid = c(1:1000)/1000
+    min_cor_cutoff = 1
+    max_cor_cutoff = 0
+    for (i in searchgrid){
+      num_cor_genes = sum(abs(cors) > i)
+      if (num_cor_genes >= 2 & 
+          num_cor_genes <= 20 ){
+        if (i < min_cor_cutoff){
+          min_cor_cutoff = i
+        }
+        if (i > max_cor_cutoff){
+          max_cor_cutoff = i
+        }
+      }
+    }
+    cor_cutoffs = seq(from = min_cor_cutoff, to = max_cor_cutoff, length.out = 10)
+    ncgvec = c()
+    for (i in 1:10){ncgvec = c(ncgvec,sum(abs(cors)>cor_cutoffs[i]))}
+    cor_df = data.frame(cor_cutoffs = cor_cutoffs,
+                        num_cor_genes = ncgvec)
+    for (i in cor_cutoffs){
+      keep=abs(cors)>i
+      signature=colMeans(counts_receiver[keep,names(exp_sender)]*cors[keep])
+      #exp_receiver=sum(1*(signature>quantile(signature,j)))
+      for (j in quantile_cutoffs){
+        df_temp = data.frame(signature = signature, 
+                             cor_cutoff = rep(i, length(signature)),
+                             receiver_quantile = rep(j, length(signature)),
+                             xintercept = rep(quantile(signature,j), length(signature))
+        )
+        df = bind_rows(df, df_temp)
+      }
+    }
+    is.num <- sapply(df, is.numeric)
+    df[is.num] <- lapply(df[is.num], round, 5)
+    # Histogram with density plot
+    p = ggplot(df, aes(x=signature)) +
+      geom_histogram(aes(y=after_stat(density)), colour="black", fill="white", bins = 30)+
+      geom_density()+
+      theme_bw() +
+      geom_vline(data = df, aes(xintercept = xintercept), colour = "red")+
+      ggtitle(
+        paste(sending_cell_type,
+              " to ",
+              receiving_cell_type,
+              "; ",
+              receiving_gene,
+              "; ",n_path,"PCs",
+              # pca_cum,
+              sep ="")
+      ) +
+      facet_grid(cor_cutoff~receiver_quantile, labeller = label_both) 
+    combined_plot <-p + gridExtra::tableGrob(cor_df)+ plot_layout(widths = c(5, 1))
+    ggsave(file_path, plot = combined_plot, width = 40, height = 20, dpi = 500)
+  }
+  file_path = paste(outFn, '_cutoffPlot', '.pdf', sep = '')
+  plotCutoffs(receiving_gene, file_path, counts_receiver, 
+              exp_sender, pca_sender, n_path)
+  s = paste('\rfinished plotting cutoff plots to ', file_path, '\n\t use the plots to determine appropriate quantile and cor. cutoff values (see README for details)', sep = '')
+  stop(s)
 }
-nbags = length(pos_sender)
-cat("Total number of receiving cells:",dim(meta_receiver)[1],"\n")
-cat("Successfully constructed bags:",nbags,"\n")
-Sys.time()
+
 cat('finalizing spacia inputs...\n')
 # aggregate receiving genes to receiving pathways
 cors=cor(counts_receiver[receiving_gene,],t(counts_receiver))[1,]
@@ -314,4 +428,7 @@ write.csv(betas, file = paste(outFn, '_betas.csv', sep = ''), quote = FALSE, row
 write.csv(df, file = paste(outFn, '_pip.csv', sep = ''), quote = FALSE, row.names = FALSE)
 cat('saved csv results\n')
 Sys.time()
+if (file.exists(cacheFn)) {
+  unlink(cacheFn)
+}
 cat('################finished run################\n\n\n')
