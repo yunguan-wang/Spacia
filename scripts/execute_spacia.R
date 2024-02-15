@@ -273,7 +273,7 @@ if (runPlotOnly) {
     df[is.num] <- lapply(df[is.num], round, 5)
     # Histogram with density plot
     p = ggplot(df, aes(x=signature)) +
-      geom_histogram(aes(y=..density..), colour="black", fill="white", bins = 30)+
+      geom_histogram(aes(y=after_stat(density)), colour="black", fill="white", bins = 30)+
       geom_density()+
       theme_bw() +
       geom_vline(data = df, aes(xintercept = xintercept), colour = "red")+
@@ -294,7 +294,7 @@ if (runPlotOnly) {
   file_path = paste(outFn, '_cutoffPlot', '.pdf', sep = '')
   plotCutoffs(receiving_gene, file_path, counts_receiver, 
               exp_sender, pca_sender, n_path)
-  s = paste('finished plotting cutoff plots to ', file_path, '')
+  s = paste('\rfinished plotting cutoff plots to ', file_path, '\n\t use the plots to determine appropriate quantile and cor. cutoff values', sep = '')
   stop(s)
 }
 
