@@ -294,7 +294,7 @@ if (runPlotOnly) {
   file_path = paste(outFn, '_cutoffPlot', '.pdf', sep = '')
   plotCutoffs(receiving_gene, file_path, counts_receiver, 
               exp_sender, pca_sender, n_path)
-  s = paste('\rfinished plotting cutoff plots to ', file_path, '\n\t use the plots to determine appropriate quantile and cor. cutoff values', sep = '')
+  s = paste('\rfinished plotting cutoff plots to ', file_path, '\n\t use the plots to determine appropriate quantile and cor. cutoff values (see README for details)', sep = '')
   stop(s)
 }
 
