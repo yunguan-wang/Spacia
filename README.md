@@ -166,7 +166,10 @@ Rscript $dir/scripts/execute_spacia.R \
 Use `-h` or `--help` to see detailed descriptions of options and inputs. 
 
 ##### Determining cutoffs
-The R script requires the receiving gene cutoffs as inputs since the same process was used for the prostate Merscope data. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and plots will be generated and saved to a pdf. First, find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. This process is automated in the main `spacia.py` if `--response_exp_cutoff 'auto'` is used. 
+The R script requires the receiving gene cutoffs as inputs since the same process was used for the prostate Merscope data. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and plots will be generated and saved to a pdf. First, find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
+<img src="https://github.com/yunguan-wang/Spacia/tree/zzhu33-patch-1/img/cutoffs.png" height="431" width="857">
+
+Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. This process is automated in the main `spacia.py` if `--response_exp_cutoff 'auto'` is used. 
 
 ### Contact Us
 If you have any suggestions/ideas for Spacia or are having issues trying to use it, please don't hesitate to reach out to us.
