@@ -173,7 +173,7 @@ if (!loadedCache) {
   cat('pre-processing data...\n')
   #process count data
   if (opt$isCount) {
-    counts=as.matrix(counts[,-1])
+    counts=as.matrix(counts)
     counts=t(t(counts)/colMeans(counts)) # norm
     counts=log1p(counts) # log
   }
