@@ -225,7 +225,7 @@ if (!loadedCache) {
   cat("Total number of receiving cells:",dim(meta_receiver)[1],"\n")
   cat("Successfully constructed bags:",nbags,"\n")
   Sys.time()
-  cat("saving cache fiel to ",cacheFn,"\n")
+  cat("saving cache file to ",cacheFn,"\n")
   save(counts_receiver,counts_sender, pos_sender, exp_sender, pca_sender, 
        nbags, sending_cell_type, receiving_cell_type,  
        ntotal, nwarm, nthin, nchain, thetas, n_path,
