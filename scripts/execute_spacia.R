@@ -16,7 +16,7 @@ option_list = list(
               default=NULL, 
               help='input metadata [default = %default]\n\t\t\tTable of location and cell type info with each cell taking one row. Must contain cell names as first column as well as columns "X","Y", and "cell_type"',
               metavar="character"),
-  make_option(c("-C", "--isCount"), action="store_true", 
+  make_option(c("-C", "--isCount"), action="store_true", default=FALSE,
               help="gene expression matrix consists of raw counts"),
   make_option(c("-a", "--spacia_path"), type="character", default=NULL, 
               help="path to spacia core code [default = %default]\n\t\tThe path to directory containing:\n\t\t\tFun_MICProB_C2Cinter.cpp\n\t\t\tMICProB_MIL_C2Cinter.R\n\t\t\tMIL_wrapper.R", 
