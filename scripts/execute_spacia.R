@@ -83,7 +83,11 @@ if (file.exists(rDataFn)) {
 }
 #load cached data
 loadedCache = FALSE
-cacheFn = paste(outFn, '_cache.RData', sep = '')
+cacheFn = file.path(dirname(outFn),
+                    paste(opt$sendingCell, 
+                          '-', 
+                          opt$receivingCell, 
+                          '_cache.RData', sep = ''))
 if (file.exists(cacheFn)) {
   if (opt$overwrite) {
     cat('ignoring existing cache...\n')
@@ -98,7 +102,7 @@ if (file.exists(cacheFn)) {
 if (loadedCache) {
   tmpCheck = c(sending_cell_type != opt$sendingCell,
                receiving_cell_type != opt$receivingCell,
-               receiving_gene != opt$receivingGene,
+               # receiving_gene != opt$receivingGene,
                n_path != opt$path
                )
   if (any(tmpCheck)) {
@@ -212,19 +216,23 @@ if (!loadedCache) {
     keep=dist_receiver_sender<dist_cutoff2
     if (sum(keep)<min_instance) {next}
     pos_sender[[rownames(meta_receiver)[i]]]=log(dist_receiver_sender[keep]) # critical (log)
-    exp_sender[[rownames(meta_receiver)[i]]]=pca_sender[keep,1:n_path]
+    #only store index of sending cells to avoid memory error in cases of 
+    #large numbers of receiving cells
+    # exp_sender[[rownames(meta_receiver)[i]]]=pca_sender[keep,1:n_path]
+    exp_sender[[rownames(meta_receiver)[i]]]=keep
   }
   nbags = length(pos_sender)
   cat("Total number of receiving cells:",dim(meta_receiver)[1],"\n")
   cat("Successfully constructed bags:",nbags,"\n")
   Sys.time()
+  cat("saving cache fiel to ",cacheFn,"\n")
+  save(counts_receiver,counts_sender, pos_sender, exp_sender, pca_sender, 
+       nbags, sending_cell_type, receiving_cell_type,  
+       ntotal, nwarm, nthin, nchain, thetas, n_path,
+       file = cacheFn)
 }
 
 if (runPlotOnly) {
-  save(counts_receiver,counts_sender, pos_sender, exp_sender, pca_sender, 
-       nbags, sending_cell_type, receiving_cell_type, receiving_gene, 
-       ntotal, nwarm, nthin, nchain, thetas, n_path,
-       file = cacheFn)
   plotCutoffs <- function(receiving_gene, file_path, counts_receiver, 
                           exp_sender, pca_sender, n_path) {
     quantile_cutoffs = 1:12
@@ -316,6 +324,10 @@ if (maxBags > 0) {
     pos_sender = pos_sender[keep1]
     exp_sender = exp_sender[keep1]
   }
+}
+#reconstruct exp_sender from index
+for (x in names(exp_sender)) {
+  exp_sender[[x]] = pca_sender[exp_sender[[x]],1:n_path]
 }
 Sys.time()
 
@@ -428,7 +440,7 @@ write.csv(betas, file = paste(outFn, '_betas.csv', sep = ''), quote = FALSE, row
 write.csv(df, file = paste(outFn, '_pip.csv', sep = ''), quote = FALSE, row.names = FALSE)
 cat('saved csv results\n')
 Sys.time()
-if (file.exists(cacheFn)) {
-  unlink(cacheFn)
-}
+# if (file.exists(cacheFn)) {
+#   unlink(cacheFn)
+# }
 cat('################finished run################\n\n\n')
