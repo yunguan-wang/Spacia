@@ -40,7 +40,7 @@ option_list = list(
   make_option(c('-u', '--corCut'), type='double', default=NULL,
               help='receiving gene cor. cutoff, overwrites -t [default = %default]\n\t\tcorrelation value cutoff used in choosing genes to construct a signature of the receiving gene; this reduces dropout', 
               metavar = 'number'),
-  make_option(c('-d', '--dist'), type='integer', default=50,
+  make_option(c('-d', '--dist'), type='double', default=50,
               help='distance cutoff [default = %default]', metavar = 'number'),
   make_option(c('-p', '--path'), type='integer', default=50,
               help='number of principle components to use [default = %default]', metavar = 'number'),
