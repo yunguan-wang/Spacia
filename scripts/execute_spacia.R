@@ -215,7 +215,7 @@ if (!loadedCache) {
     dist_receiver_sender=colSums((xy_receiver[,i]-xy_sender)^2)
     keep=dist_receiver_sender<dist_cutoff2
     if (sum(keep)<min_instance) {next}
-    pos_sender[[rownames(meta_receiver)[i]]]=log(dist_receiver_sender[keep]) # critical (log)
+    pos_sender[[rownames(meta_receiver)[i]]]=log(sqrt(dist_receiver_sender[keep])) # critical (log)
     #only store index of sending cells to avoid memory error in cases of 
     #large numbers of receiving cells
     # exp_sender[[rownames(meta_receiver)[i]]]=pca_sender[keep,1:n_path]
