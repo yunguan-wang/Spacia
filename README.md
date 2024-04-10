@@ -157,7 +157,7 @@ export dir=[path/to/Spacia]
 Rscript $dir/spacia.R \
 	-x $dir/test/input/rscript_test_data/example_counts.csv -C \
 	-m $dir/test/input/rscript_test_data/example_meta.csv \
-	-a $dir/Spacia \
+	-a $dir/spacia \
 	-r Tumor_cells -s Fibroblasts -g ACKR3 \
 	-q 0.76 -u 0.179 \
 	-l 5000 -w 2500 \
