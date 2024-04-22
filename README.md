@@ -157,7 +157,7 @@ Primary instance scores between each receiver and sender, in long format. To dec
 
 # R interface
 
-For users who want to directly access the core of Spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an example R script that showcases the few key steps. Please regard the codes in this R script as examples and remember to customize everything according to your needs/datasets. This script showcases our suggested pipeline of data processing, and the codes should be self-explanatory. Our analysis codes of the prostate Merscope data (Fig. 2) are derived based on this R script. The major pre-processing, inference, and post-processing steps shown in this R script are overall consistent with those in `spacia.py`. We expect different SRT technologies to generate data in different formats and vary in quality. For maximum performance, we suggest that users perform data pre-processing and thorough quality filtering on their own, then massage the filtered data to the right format to feed into the core of Spacia. 
+For users who want to directly access the core of Spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an R interface that showcases the few key steps. Please remember to customize the workflow according to your needs/datasets. This interface showcases our suggested pipeline of data processing, and the codes should be self-explanatory. Our analysis codes of the prostate Merscope data (Fig. 2) are derived based on this workflow. The major pre-processing, inference, and post-processing steps shown in this R interface are overall consistent with those in `spacia.py`. We expect different SRT technologies to generate data in different formats and vary in quality. For maximum performance, we suggest that users perform data pre-processing and thorough quality filtering on their own, then massage the filtered data to the right format to feed into the core of Spacia. 
 
 ## Installation
 
@@ -175,28 +175,28 @@ In additiona to the R packages for `spacia.py`, the following are needed:
 
 ## Test installation
 
-We provide example data and parameters under `test/input/rscript_test_data` to test the R script. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
+We provide example data and parameters under `test/input/r_test_data` to test the R interface. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
 
 ```
 export dir=[path/to/Spacia]
 Rscript $dir/spacia.R \
-	-x $dir/test/input/rscript_test_data/example_counts.csv -C \
-	-m $dir/test/input/rscript_test_data/example_meta.csv \
+	-x $dir/test/input/r_test_data/example_counts.csv -C \
+	-m $dir/test/input/r_test_data/example_meta.csv \
 	-a $dir/spacia \
 	-r Tumor_cells -s Fibroblasts -g ACKR3 \
 	-q 0.76 -u 0.179 \
 	-l 5000 -w 2500 \
-	-o $dir/test/rscript_test/
+	-o $dir/test/r_test/
 ```
 Use `-h` or `--help` to see detailed descriptions of options and inputs. 
 
-Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_betas.csv`, and `Fibroblasts-Tumor_cells_ACKR3_pip.csv` should be generated under `[path/to/Spacia]/test/rscript_test/`.
+Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_betas.csv`, and `Fibroblasts-Tumor_cells_ACKR3_pip.csv` should be generated under `[path/to/Spacia]/test/r_test/`.
 
 ### Determining cutoffs
-The R script requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
+The R interface requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
 <img src="img/cutoffs.png" height="431">
 
-Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/rscript_test_data/gene_cutoffs.csv) shows the format compatible with `spacia.R` and can be passed to `-t`, and it corresponds to cutoffs of different receiving genes in the case where fibroblasts are sending cells and tumor cells are receiving cells. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
+Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/r_test_data/gene_cutoffs.csv) shows the format compatible with `spacia.R` and can be passed to `-t`, and it corresponds to cutoffs of different receiving genes in the case where fibroblasts are sending cells and tumor cells are receiving cells. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
 
 ### Outline for large scale runs
 Consider following these steps if running Spacia on a large scale (e.g. screen for all potential cell-to-cell communications in a MERSCOPE or CosMx dataset).
@@ -215,7 +215,7 @@ Run Spacia with a list of receiving genes as input for `-g`, with one output dir
 
 #### (4) Parallelization.
 
-Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case the script will loop through all receiving genes in the corresponding csv entered for `-t` and use lock files to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provided these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability in the script. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. This means that it is best to spread jobs to as many systems as possible. Since the memory requirement of each job is relatively low compared with similar tools, Spacia can scale using systems with lower memory capacity, which is often a limiting resource in shared computing environments.
+Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provided these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. This means that it is best to spread jobs to as many systems as possible. Since the memory requirement of each job is relatively low compared with similar tools, Spacia can scale using systems with lower memory capacity, which is often a limiting resource in shared computing environments.
 
 ### Contact Us
 If you have any suggestions/ideas for Spacia or are having issues trying to use it, please don't hesitate to reach out to us.
