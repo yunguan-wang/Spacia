@@ -975,7 +975,6 @@ if __name__ == "__main__":
 
         with open(os.path.join(intermediate_folder, fn), "w") as f:
             f.write(format_json(pathway_dict))
-            f.write('\n')
             
     # Writing spacia R job inputs common for each receiver pathways
     # job metadata
@@ -984,15 +983,11 @@ if __name__ == "__main__":
     # sender distance and expression json (list of lists)
     with open(dist_sender_fn, "w") as f:
         f.write(format_json(sender_dist_dict))
-        f.write('\n')
         
     # with open(exp_sender_fn, "w") as f:
     #     f.write(format_json(sender_exp))
     with open(exp_sender_fn, "w") as f:
-        for k, v in sender_exp.items():
-            _dict = {k:v}
-            f.write(format_json(_dict))
-            f.write('\n')
+        f.write(format_json(sender_exp))
     
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
