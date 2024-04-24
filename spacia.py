@@ -973,24 +973,26 @@ if __name__ == "__main__":
             if pca_gene is not None:
                 pathway_dict[pca_gene] = {}
 
-        with open(os.path.join(intermediate_folder, fn), "w") as fp:
+        with open(os.path.join(intermediate_folder, fn), "w") as f:
             f.write(format_json(pathway_dict))
+            f.write('\n')
             
     # Writing spacia R job inputs common for each receiver pathways
     # job metadata
     meta_data.to_csv(metadata_fn, sep='\t')
     
     # sender distance and expression json (list of lists)
-    with open(dist_sender_fn, "w") as fp:
+    with open(dist_sender_fn, "w") as f:
         f.write(format_json(sender_dist_dict))
+        f.write('\n')
         
-    # with open(exp_sender_fn, "w") as fp:
+    # with open(exp_sender_fn, "w") as f:
     #     f.write(format_json(sender_exp))
-    with open(exp_sender_fn, "w") as fp:
+    with open(exp_sender_fn, "w") as f:
         for k, v in sender_exp.items():
             _dict = {k:v}
             f.write(format_json(_dict))
-            fp.write('\n')
+            f.write('\n')
     
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
