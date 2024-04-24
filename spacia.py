@@ -677,8 +677,7 @@ if __name__ == "__main__":
     np.random.seed(0)
 
     # Checking inputs
-    assert corr_agg_method in ['simple','weighted'], \
-        f"'corr_agg_method' must be either 'simple' or 'weighted'!"  
+    assert corr_agg_method in ['simple','weighted'], "'corr_agg_method' must be either 'simple' or 'weighted'!"  
     
     intermediate_folder = os.path.join(output_path, "model_input")
     if not os.path.exists(intermediate_folder):
