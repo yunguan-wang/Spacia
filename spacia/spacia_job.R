@@ -86,15 +86,8 @@ exp_receiver = read.csv(
 exp_receiver = exp_receiver == 1
 
 # Read sender expression 
-lines = readLines(exp_sender)
-tmp = list()
-for (i in 1:length(lines)) {
-  line_data = fromJSON(lines[i], simplify = T)
-  tmp[names(line_data)] = line_data
-}
+tmp = fromJSON(file=exp_sender)
 exp_sender = sapply(tmp, function (x) do.call(rbind, as.list(x)))
-tmp = 0
-lines = 0
 
 # exp_sender = sapply(exp_sender, function (x) do.call(rbind, as.list(x))) # Fixed bug causing error when there is only one signal
 
