@@ -37,8 +37,8 @@ Then, let's take a look at the metadata.
 head -n 5 spacia_metadata.txt
 ```
 
-|X|Y|cell_type
-| --- | ---| --- |
+| |X|Y|cell_type
+| --- | ---| --- | ---|
 cell_0|0|0|A
 cell_1|0|1|B
 cell_2|0|2|B
