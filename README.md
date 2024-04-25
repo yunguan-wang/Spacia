@@ -37,8 +37,10 @@ We strongly recommend using conda to manage the installation of all dependencies
 conda create --name spacia
 conda activate spacia
 # conda config --add channels conda-forge # If you do not have this channel added before
-conda install r-base=4.0.5 r-coda=0.19-4 r-ggmcmc=1.5.1.1 r-rcpp=1.0.9 r-RcppArmadillo=0.11.2.3.1 r-rjson=0.2.21
 conda install python=3.8 pandas=2.0.3 scikit-learn=1.3.0 numpy=1.24.3 scipy=1.10.1 matplotlib=3.7.2
+
+# If you are having trouble setting up the python env, try remove the version restrictions for the packges.
+conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
 ```
 
 Then, download this repo.
@@ -70,11 +72,27 @@ Test Succeeded.
 
 ### About the test data
 
-The test data is a randomly generated dataset for the purpose of validating the installation only.
+The test data, available in this repo at `test/input`, is a randomly generated dataset for the purpose of validating the installation only, and thus there is no interpretation associated with the test results.
 
-The test itself contains ~2,500 cells and it should finish in 5 minutes.
+The test data contains a gene expression matrix (`counts.txt`) and a cell metadata table (`spacia_metadata.txt`).
 
-The purpose of the test is only to validate the installation, and the there is no interpretation associated with the test results.
+The gene expression data is a 2,844 x 100 cell-by-gene matrix, where the first column is cell names, and the first row is the gene names. 
+| | gene1 | gene2 | gene3 | gene4 | gene5 |
+| --- | ---| --- | ---| --- | ---|
+| cell_0 | 1.06 | 2.14 | 1.36 | 0.94 | 1.52 |
+| cell_1 | 0.97 | 2.42 | 1.43 | 1.21 | 1.17 |
+| cell_2 | 0.76 | 2.16 | 1.07 | 1.46 | 1.47 |
+| cell_3 | 0.82 | 2.01 | 1.25 | 1.18 | 2.13 |
+
+The cell metadata contains spatial coordinates of each cell, as well as its cell type assignment.
+
+| |X|Y|cell_type
+| --- | ---| --- | ---|
+cell_0|0|0|A
+cell_1|0|1|B
+cell_2|0|2|B
+cell_3|0|3|A
+
 
 ## Usage
 
