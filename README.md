@@ -43,6 +43,12 @@ conda install python=3.8 pandas=2.0.3 scikit-learn=1.3.0 numpy=1.24.3 scipy=1.10
 conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
 ```
 
+Install the R packages:
+```
+R
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson'))
+```
+
 Then, download this repo.
 ```
 git clone [repo_path]
@@ -187,7 +193,16 @@ In additiona to the R packages for `spacia.py`, the following are needed:
 - scales
 - gridExtra
 - dplyr
+  
+Installation commands:
+```
+R
+#core packages 
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson'))
 
+#R interface specific packages
+install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gridExtra', 'dplyr'))
+```
 
 ## Test installation
 
