@@ -63,6 +63,28 @@ option_list = list(
 
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
+readCsvTsv <- function(fn, rn=NULL) {
+  if (is.null(rn)) {
+    data = read.csv(fn)
+    if (ncol(data)<2) {
+      data = read.table(fn, header = T, sep = '\t', fill = T)
+      if (ncol(data)<2) {
+        stop(paste('error: ', fn, 'is not recognized as csv or tsv'))
+      }
+    }
+    return(data)
+  } else{
+    data = read.csv(fn, row.names = rn, stringsAsFactors=F)
+    if (ncol(data)<2) {
+      data = read.table(fn, header = T, sep = '\t', fill = T,
+                        row.names = rn, stringsAsFactors=F)
+      if (ncol(data)<2) {
+        stop(paste('error: ', fn, 'is not recognized as csv or tsv'))
+      }
+    }
+    return(data)
+  }
+}
 ########  parameters  ###########
 cat('################starting run...################\n')
 Sys.time()
@@ -85,7 +107,7 @@ if (is.null(opt$receivingGene)) {
   if (is.null(opt$paramTable)) {
     stop('*********terminating run: no csv provided for "-t"*********\n')
   }
-  paramTable = read.csv(opt$paramTable)
+  paramTable = readCsvTsv(opt$paramTable)
   recGenes = paramTable$gene_name
   cat('using receiving genes from cutoffs table\n')
   outFns = recGenes
@@ -199,8 +221,8 @@ if (!loadedCache) {
   cat('reading data...\n')
   options(scipen=999) 
   # do this in spacia
-  meta=read.csv(opt$inputMeta, row.names = 1, stringsAsFactors=F)
-  counts=read.csv(opt$inputExpression, row.names = 1, stringsAsFactors=F)
+  meta = readCsvTsv(opt$inputMeta, rn = 1)
+  counts = readCsvTsv(opt$inputExpression, rn = 1)
   Sys.time()
   cat('pre-processing data...\n')
   #process count data
@@ -275,6 +297,7 @@ if (is.null(opt$quantile) & is.null(opt$corCut) & is.null(opt$paramTable)) {
 }
 #make plots to help user determine cutoffs
 if (runPlotOnly) {
+  cat('generating plots for determining cutoffs...\n')
   plotCutoffs <- function(receiving_gene, file_path, counts_receiver, 
                           exp_sender, pca_sender, n_path) {
     quantile_cutoffs = 1:12
@@ -347,7 +370,8 @@ if (runPlotOnly) {
     s = paste('\rfinished plotting cutoff plots to ', file_path, '\n', sep = '')
     cat(s)
   }
-    stop('finished plotting all genes\nuse the plots to determine appropriate quantile and cor. cutoff values (see README for details)\n')
+  
+  stop('\rfinished plotting all genes\nuse the plots to determine appropriate quantile and cor. cutoff values (see README for details)\n')
 }
 
 loadCache = F
@@ -391,7 +415,7 @@ for (mainI in 1:length(recGenes)) {
     exp_receiver_quantile = opt$quantile
     cor_cutoff = opt$corCut
   } else{
-    paramTable = read.csv(opt$paramTable)
+    paramTable = readCsvTsv(opt$paramTable)
     tmp = paramTable[paramTable$gene_name == receiving_gene, ]
     if (dim(tmp)[1] == 1) {
       cor_cutoff = tmp$cor_cutoff
