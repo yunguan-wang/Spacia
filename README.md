@@ -196,12 +196,12 @@ We provide example data and parameters under `test/input/r_test_data` to test th
 ```
 export dir=[path/to/Spacia]
 Rscript $dir/spacia.R \
-	-x $dir/test/input/r_test_data/example_counts.csv -C \
-	-m $dir/test/input/r_test_data/example_meta.csv \
+	-x $dir/test/input/counts.txt \
+	-m $dir/test/input/spacia_metadata.txt \
 	-a $dir/spacia \
-	-r Tumor_cells -s Fibroblasts -g ACKR3 \
-	-q 0.76 -u 0.179 \
-	-l 5000 -w 2500 \
+	-r B -s A -g gene2 \
+	-q 0.272 -u 0.091 \
+	-d 2 -l 5000 -w 2500 \
 	-o $dir/test/r_test/
 ```
 Use `-h` or `--help` to see detailed descriptions of options and inputs. 
