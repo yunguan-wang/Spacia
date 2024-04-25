@@ -215,7 +215,7 @@ Rscript $dir/spacia.R \
 	-m $dir/test/input/spacia_metadata.txt \
 	-a $dir/spacia \
 	-r B -s A -g gene2 \
-	-q 0.272 -u 0.091 \
+	-q 0.252 -u 0.091 \
 	-d 2 -l 5000 -w 2500 \
 	-o $dir/test/r_test/
 ```
@@ -227,7 +227,7 @@ Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_be
 The R interface requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
 <img src="img/cutoffs.png" height="431">
 
-Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/gene_cutoffs.csv) shows the format compatible with `spacia.R` and can be passed to `-t`. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
+Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/gene_cutoffs_A-B.txt) shows the format compatible with `spacia.R` and can be passed to `-t`. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
 
 ### Outline for large scale runs
 Consider following these steps if running Spacia on a large scale (e.g. screen for all potential cell-to-cell communications in a MERSCOPE or CosMx dataset).
