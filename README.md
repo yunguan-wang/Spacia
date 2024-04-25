@@ -76,8 +76,6 @@ The test itself contains ~2,500 cells and it should finish in 5 minutes.
 
 The purpose of the test is only to validate the installation, and the there is no interpretation associated with the test results.
 
-We have also included the simulation dataset used in our manuscript in `/data/simulation`
-
 ## Usage
 
 ### Definition of terms used in Spacia
