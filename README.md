@@ -206,7 +206,7 @@ install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gr
 
 ## Test installation
 
-We provide example data and parameters under `test/input/r_test_data` to test the R interface. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
+We use the same example data under `test/input` to test the R interface. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
 
 ```
 export dir=[path/to/Spacia]
@@ -227,7 +227,7 @@ Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_be
 The R interface requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
 <img src="img/cutoffs.png" height="431">
 
-Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/r_test_data/gene_cutoffs.csv) shows the format compatible with `spacia.R` and can be passed to `-t`, and it corresponds to cutoffs of different receiving genes in the case where fibroblasts are sending cells and tumor cells are receiving cells. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
+Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/gene_cutoffs.csv) shows the format compatible with `spacia.R` and can be passed to `-t`, and it corresponds to cutoffs of different receiving genes in the case where fibroblasts are sending cells and tumor cells are receiving cells. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
 
 ### Outline for large scale runs
 Consider following these steps if running Spacia on a large scale (e.g. screen for all potential cell-to-cell communications in a MERSCOPE or CosMx dataset).
