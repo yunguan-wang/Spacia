@@ -238,7 +238,7 @@ We highly recommend users perform their own quality control and normalization. S
 
 #### (2) Determine the scope of the analysis. 
 
-Due to costs in time and computation, we recommend users limit their analysis to cell types and genes of interest if possible. Note that `spacia.R` runs in the 'PCA' mode, thus its performance is not greatly affected by the number of genes in the input data and genes should not be removed to imporve performance. However, since each run consists of a combination of sending cell type, receiving cell type, and receiving gene, we recommend users at least limit the list of receiving genes to the most highly expressed genes in the receiving cells of interest in order to reduce the total number of Spacia jobs. For example, in our analysis of stroma to tumor interactions in prostate Merscope data, we chose the top 200 most highly expressed genes in tumors out of the 500 total genes available as the prospective receiving genes. 
+Due to costs in time and computation, we recommend users limit their analysis to cell types and genes of interest if possible. Note that `spacia.R` runs in the 'PCA' mode, thus its performance is not greatly affected by the number of genes in the input data and genes should not be removed to imporve performance. However, since each run consists of a combination of sending cell type, receiving cell type, and receiving gene, we recommend users at least limit the list of receiving genes to the most highly expressed genes in the receiving cells of interest in order to reduce the total number of Spacia jobs. 
 
 #### (3) Determine receiving gene cutoffs.
 
