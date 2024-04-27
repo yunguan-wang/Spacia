@@ -1,0 +1,26 @@
+=============================================================
+Probit Bayesian Multiple Instance Classification
+=============================================================
+Start warming up 5000 MCMC samples!
+Progress: 20 % ...40 % ...60 % ...80 % ...100 % ...
+Finish warming up!
+-------------------------------------------------------------
+Start extracting 5000 MCMC samples!
+Progress :20 % ...40 % ...60 % ...80 % ...100 % ...
+Finish MCMC sampling!
+=============================================================
+Elapsed time for chain1=5.401 mins: MCMC sampling is done!
+=============================================================
+Start warming up 5000 MCMC samples!
+Progress: 20 % ...40 % ...60 % ...80 % ...100 % ...
+Finish warming up!
+-------------------------------------------------------------
+Start extracting 5000 MCMC samples!
+Progress :20 % ...40 % ...60 % ...80 % ...100 % ...
+Finish MCMC sampling!
+=============================================================
+Elapsed time for chain2=2.973 mins: MCMC sampling is done!
+Time difference of 8.377953 mins
+          used (Mb) gc trigger (Mb) max used (Mb)
+Ncells  741552 39.7    1231381 65.8  1231381 65.8
+Vcells 1631565 12.5    8388608 64.0  8388583 64.0
