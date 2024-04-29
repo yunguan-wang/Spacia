@@ -23,6 +23,7 @@ This project requires R and Python with the following dependencies:
 - Rcpp==1.0.9
 - RcppArmadillo==0.11.2.3.1
 - rjson==0.2.21
+- data.table==1.14.8
   
 #### Python Packages:
 - matplotlib==3.7.2
@@ -46,7 +47,7 @@ conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
 Install the R packages:
 ```
 R
-install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson'))
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson', 'data.table'))
 ```
 
 Then, download this repo.
