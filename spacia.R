@@ -409,7 +409,7 @@ for (mainI in 1:length(recGenes)) {
     exp_receiver_quantile = opt$quantile
     cor_cutoff = opt$corCut
   } else{
-    paramTable = read.csv(opt$paramTable)
+    paramTable = fread(opt$paramTable)
     tmp = paramTable[paramTable$gene_name == receiving_gene, ]
     if (dim(tmp)[1] == 1) {
       cor_cutoff = tmp$cor_cutoff
