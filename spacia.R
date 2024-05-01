@@ -453,7 +453,7 @@ for (mainI in 1:length(recGenes)) {
   
   
   
-  counts_receiver_filtered <- counts_receiver[cell %in% names(exp_sender)]
+  counts_receiver_filtered <- counts_receiver[counts_receiver[[1]] %in% names(exp_sender)]
   numeric_counts_receiver_filtered <- counts_receiver_filtered[, .SD, .SDcols = -1]
   numeric_counts_receiver_filtered <- numeric_counts_receiver_filtered[, ..keep]
   
