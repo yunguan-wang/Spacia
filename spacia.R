@@ -1,3 +1,4 @@
+###########  Libraries  ###########
 library(Rcpp)
 library(rjson)
 library("optparse")
@@ -7,39 +8,41 @@ library(scales)
 library(gridExtra)
 library(dplyr)
 library(filelock)
+library(data.table)
 
+###########  Options  ###########
 option_list = list(
-  make_option(c("-x", "--inputExpression"), type="character", 
-              default=NULL, 
+  make_option(c("-x", "--inputExpression"), type="character",
+              default=NULL,
               help='gene expression matrix [default = %default]\n\t\t\tFormat: cell x gene expression values. Column names should be "cell" followed by gene names. Same as in spacia.py, expression values should be normalized and log-transformed. Option "-C" can be used if using raw counts to perform a simple transformation',
               metavar="character"),
-  make_option(c("-m", "--inputMeta"), type="character", 
-              default=NULL, 
+  make_option(c("-m", "--inputMeta"), type="character",
+              default=NULL,
               help='input metadata [default = %default]\n\t\t\tTable of location and cell type info with each cell taking one row. Must contain cell names as first column as well as columns "X","Y", and "cell_type"',
               metavar="character"),
   make_option(c("-C", "--isCount"), action="store_true", default=FALSE,
               help="gene expression matrix consists of raw counts"),
-  make_option(c("-a", "--spacia_path"), type="character", default=NULL, 
-              help="path to spacia core code [default = %default]\n\t\tThe path to directory containing:\n\t\t\tFun_MICProB_C2Cinter.cpp\n\t\t\tMICProB_MIL_C2Cinter.R\n\t\t\tMIL_wrapper.R", 
+  make_option(c("-a", "--spacia_path"), type="character", default=NULL,
+              help="path to spacia core code [default = %default]\n\t\tThe path to directory containing:\n\t\t\tFun_MICProB_C2Cinter.cpp\n\t\t\tMICProB_MIL_C2Cinter.R\n\t\t\tMIL_wrapper.R",
               metavar="character"),
-  make_option(c("-r", "--receivingCell"), type="character", default=NULL, 
+  make_option(c("-r", "--receivingCell"), type="character", default=NULL,
               help="receiving cell type [default = %default]", metavar="character"),
-  make_option(c("-s", "--sendingCell"), type="character", default=NULL, 
+  make_option(c("-s", "--sendingCell"), type="character", default=NULL,
               help="sending cell type [default = %default]", metavar="character"),
-  make_option(c("-g", "--receivingGene"), type="character", default=NULL, 
+  make_option(c("-g", "--receivingGene"), type="character", default=NULL,
               help="receiving gene (can be a text file of one gene per line) [default = %default]", metavar="character"),
-  make_option(c("-o", "--output"), type="character", default=NULL, 
+  make_option(c("-o", "--output"), type="character", default=NULL,
               help="output file name prefix", metavar="character"),
   make_option(c("-f", "--overwrite"), action="store_true", default=FALSE,
               help="overwrite existing output [default = %default]"),
   make_option(c("-t", "--paramTable"), type="character", default=NULL,
-              help="optional csv of cor_cutoff and exp_receiver_quantile for each receiving gene\n\t\t***mandatory if using multiple receiving genes from file***\n\t\tmust contain columns:\n\t\t\tgene_name,cor_cutoff,quantile_cutoff", 
+              help="optional csv of cor_cutoff and exp_receiver_quantile for each receiving gene\n\t\t***mandatory if using multiple receiving genes from file***\n\t\tmust contain columns:\n\t\t\tgene_name,cor_cutoff,quantile_cutoff",
               metavar="character"),
   make_option(c('-q', '--quantile'), type='double', default=NULL,
-              help='receiving gene quantile cutoff, overwrites -t [default = %default]\n\t\tcutoff used to dichotomize the receiving gene signature', 
+              help='receiving gene quantile cutoff, overwrites -t [default = %default]\n\t\tcutoff used to dichotomize the receiving gene signature',
               metavar = 'number'),
   make_option(c('-u', '--corCut'), type='double', default=NULL,
-              help='receiving gene cor. cutoff, overwrites -t [default = %default]\n\t\tcorrelation value cutoff used in choosing genes to construct a signature of the receiving gene; this reduces dropout', 
+              help='receiving gene cor. cutoff, overwrites -t [default = %default]\n\t\tcorrelation value cutoff used in choosing genes to construct a signature of the receiving gene; this reduces dropout',
               metavar = 'number'),
   make_option(c('-d', '--dist'), type='double', default=50,
               help='distance cutoff [default = %default]', metavar = 'number'),
@@ -59,33 +62,12 @@ option_list = list(
               help='nchain [default = %default]', metavar = 'number'),
   make_option(c('-e', '--nSample'), type='integer', default=50,
               help='number of samples from each chain to calculate beta/b pvals [default = %default]', metavar = 'number')
-  ); 
+);
 
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
-readCsvTsv <- function(fn, rn=NULL) {
-  if (is.null(rn)) {
-    data = read.csv(fn)
-    if (ncol(data)<2) {
-      data = read.table(fn, header = T, sep = '\t', fill = T)
-      if (ncol(data)<2) {
-        stop(paste('error: ', fn, 'is not recognized as csv or tsv'))
-      }
-    }
-    return(data)
-  } else{
-    data = read.csv(fn, row.names = rn, stringsAsFactors=F)
-    if (ncol(data)<2) {
-      data = read.table(fn, header = T, sep = '\t', fill = T,
-                        row.names = rn, stringsAsFactors=F)
-      if (ncol(data)<2) {
-        stop(paste('error: ', fn, 'is not recognized as csv or tsv'))
-      }
-    }
-    return(data)
-  }
-}
-########  parameters  ###########
+
+###########  parameters  ###########
 cat('################starting run...################\n')
 Sys.time()
 if (is.null(opt$output)) {
@@ -107,7 +89,7 @@ if (is.null(opt$receivingGene)) {
   if (is.null(opt$paramTable)) {
     stop('*********terminating run: no csv provided for "-t"*********\n')
   }
-  paramTable = readCsvTsv(opt$paramTable)
+  paramTable = fread(opt$paramTable)
   recGenes = paramTable$gene_name
   cat('using receiving genes from cutoffs table\n')
   outFns = recGenes
@@ -136,19 +118,19 @@ if (is.null(opt$receivingGene)) {
 
 
 
-#load cached data
+########### Load Cached Data  ###########
 loadedCache = FALSE
 if (dir.exists(outFn)) {
   cacheFn = file.path(outFn,
-                      paste(opt$sendingCell, 
-                            '-', 
-                            opt$receivingCell, 
+                      paste(opt$sendingCell,
+                            '-',
+                            opt$receivingCell,
                             '_cache.RData', sep = ''))
 } else{
   cacheFn = file.path(dirname(outFn),
-                      paste(opt$sendingCell, 
-                            '-', 
-                            opt$receivingCell, 
+                      paste(opt$sendingCell,
+                            '-',
+                            opt$receivingCell,
                             '_cache.RData', sep = ''))
 }
 lockFn = paste(cacheFn, '.lock', sep = '')
@@ -184,13 +166,18 @@ if (loadedCache) {
                receiving_cell_type != opt$receivingCell,
                # receiving_gene != opt$receivingGene,
                n_path != opt$path
-               )
+  )
   if (any(tmpCheck)) {
     stop('*********terminating run: input mismatch with cache file; use -f to ignore cache*********\n')
   }
-} 
-#make cache file 
+}
+
+
+
+###########  Make Cache  ###########
 if (!loadedCache) {
+  sourceCpp(file.path(opt$spacia_path,"Fun_construct_bags.cpp"))
+  
   sending_cell_type = opt$sendingCell
   cat(paste('sending cells:', sending_cell_type, '\n'))
   receiving_cell_type = opt$receivingCell
@@ -221,66 +208,69 @@ if (!loadedCache) {
   cat('reading data...\n')
   options(scipen=999) 
   # do this in spacia
-  meta = readCsvTsv(opt$inputMeta, rn = 1)
-  counts = readCsvTsv(opt$inputExpression, rn = 1)
+  meta=fread(opt$inputMeta)
+  counts=fread(opt$inputExpression)
   Sys.time()
   cat('pre-processing data...\n')
   #process count data
   if (opt$isCount) {
-    counts=as.matrix(counts)
-    counts=t(t(counts)/colMeans(counts)) # norm
-    counts=log1p(counts) # log
+    
+    counts[, (2:ncol(counts)) := lapply(.SD, function(x) log1p(x / mean(x, na.rm = TRUE))), .SDcols = 2:ncol(counts)]
+    
   }
-  counts=t(counts) 
-  # make sure the scale of each gene's expression is the same
-  counts=counts[apply(counts,1,sd)>0,] 
-  counts=counts/apply(counts,1,sd) 
-  #check cell names
-  if (sum(!rownames(meta) %in% colnames(counts))>0) 
-  {stop("Cell name mismatch!")} 
-  counts=counts[,rownames(meta)]
-  #filter to correct cell types
-  meta_receiver=meta[meta$cell_type==receiving_cell_type,]
-  counts_receiver=counts[,rownames(meta_receiver)]
-  cat(paste('\treceiving cells:', dim(meta_receiver)[1], '\n'))
-  meta_sender=meta[meta$cell_type==sending_cell_type,]
-  counts_sender=counts[,rownames(meta_sender)]
-  cat(paste('\tsending cells:', dim(meta_sender)[1], '\n'))
   
-  # 1. first aggregate all potential sedning genes to a few dozen principal components
-  # 2. run spacia
-  # 3. revert spacia results back to gene level
+  counts[, (names(counts)[-1]) := lapply(.SD, function(x) x / sd(x) * (sd(x) > 0)), .SDcols = -1]
+  
+  # Check for mismatches in cell names before alignment
+  if (!all(meta[[1]] %in% counts[[1]])) {
+    stop("Cell name mismatch!")
+  }
+  
+  # Filter meta to get receivers and senders
+  meta_receiver <- meta[cell_type == receiving_cell_type]
+  meta_sender <- meta[cell_type == sending_cell_type]
+  
+  # Create subsets for receiver and sender cells in counts
+  counts_receiver <- counts[counts[[1]] %in% meta_receiver[[1]]]
+  counts_sender <- counts[counts[[1]] %in% meta_sender[[1]]]
+  
+  # Log information about the cell counts
+  cat(paste('\treceiving cells:', nrow(meta_receiver), '\n'))
+  cat(paste('\tsending cells:', nrow(meta_sender), '\n'))
+  
+  # Calculate PCA for sending cells without transposing the whole dataset
   Sys.time()
   cat('calculating pca...\n')
-  pca_sender=prcomp(t(counts_sender))$x
+  pca_sender <- prcomp((counts_sender[, .SD, .SDcols = -1]))$x
+  rownames(pca_sender)<-counts_sender[[1]]
+  
   Sys.time()
   cat('processing pca...\n')
-  pca_sender=t(t(pca_sender)/apply(pca_sender,2,sd)) # do this in spacia
+  pca_sender=t(t(pca_sender)/apply(pca_sender,2,sd))
+  
+  # Spatial data preparation for constructing bags
   Sys.time()
   cat('constructing bags...\n')
-  pos_sender=exp_sender=list()
-  xy_receiver=t(as.matrix(meta_receiver[,c("X","Y")]))
-  xy_sender=t(as.matrix(meta_sender[,c("X","Y")]))
-  Sys.time()
-  #find pos and exp of senders within dist_cutoff
-  dist_cutoff2 = dist_cutoff^2
-  for (i in 1:dim(counts_receiver)[2])
-  {
-    dist_receiver_sender=colSums((xy_receiver[,i]-xy_sender)^2)
-    keep=dist_receiver_sender<dist_cutoff2
-    if (sum(keep)<min_instance) {next}
-    pos_sender[[rownames(meta_receiver)[i]]]=log(sqrt(dist_receiver_sender[keep])) # critical (log)
-    #only store index of sending cells to avoid memory error in cases of 
-    #large numbers of receiving cells
-    # exp_sender[[rownames(meta_receiver)[i]]]=pca_sender[keep,1:n_path]
-    exp_sender[[rownames(meta_receiver)[i]]]=keep
+  xy_receiver <- as.matrix(meta_receiver[, .(X, Y)])
+  xy_sender <- as.matrix(meta_sender[, .(X, Y)])
+  
+  # C++ optimized function
+  results <- construct_bags(xy_receiver, xy_sender, meta_receiver[[1]], dist_cutoff^2, min_instance)
+  pos_sender <- results$pos_sender
+  exp_sender <- results$exp_sender
+  
+  #construct bags names
+  names_sender = list()
+  for (x in names(exp_sender)) {
+    names_sender[[x]] = counts_sender$cell[exp_sender[[x]]]
   }
+  
   nbags = length(pos_sender)
   cat(paste("Total number of receiving cells:",dim(meta_receiver)[1],"\n"))
   cat(paste("Successfully constructed bags:",nbags,"\n"))
   Sys.time()
   cat(paste("saving cache file to ",cacheFn,"\n"))
-  save(counts_receiver,counts_sender, pos_sender, exp_sender, pca_sender, 
+  save(counts_receiver,counts_sender, pos_sender, exp_sender, pca_sender, names_sender,
        nbags, sending_cell_type, receiving_cell_type,  
        ntotal, nwarm, nthin, nchain, thetas, n_path, 
        file = cacheFn)
@@ -290,7 +280,7 @@ if (!loadedCache) {
   }
 }
 
-
+###########  Cutoff Plot Generation  ###########
 runPlotOnly = FALSE
 if (is.null(opt$quantile) & is.null(opt$corCut) & is.null(opt$paramTable)) {
   runPlotOnly = TRUE
@@ -303,7 +293,7 @@ if (runPlotOnly) {
     quantile_cutoffs = 1:12
     quantile_cutoffs = (quantile_cutoffs - 1) / 11
     quantile_cutoffs = quantile_cutoffs[2:11]
-    # pca_cum = summary(pca_sender)$importance[3,n_path]*100
+    
     df <- data.frame(matrix(ncol = 4, nrow = 0))
     x <- c("signature", "cor_cutoff", "receiver_quantile", "xintercept")
     colnames(df) <- x
@@ -363,19 +353,23 @@ if (runPlotOnly) {
     combined_plot <-p + gridExtra::tableGrob(cor_df)+ plot_layout(widths = c(5, 1))
     ggsave(file_path, plot = combined_plot, width = 40, height = 20, dpi = 500)
   }
+  counts_receiver_df <- as.data.frame(counts_receiver)
+  rownames(counts_receiver_df) <-counts_receiver_df[,1]
+  counts_receiver_df<-counts_receiver_df[,-1]
+  counts_receiver_df<-t(counts_receiver_df)
   for (receiving_gene in recGenes) {
     file_path = paste(outFn, receiving_gene, '_cutoffPlot', '.pdf', sep = '')
-    plotCutoffs(receiving_gene, file_path, counts_receiver, 
+    plotCutoffs(receiving_gene, file_path, counts_receiver_df, 
                 exp_sender, pca_sender, n_path)
     s = paste('\rfinished plotting cutoff plots to ', file_path, '\n', sep = '')
     cat(s)
   }
-  
-  stop('\rfinished plotting all genes\nuse the plots to determine appropriate quantile and cor. cutoff values (see README for details)\n')
+  stop('finished plotting all genes\nuse the plots to determine appropriate quantile and cor. cutoff values (see README for details)\n')
 }
 
 loadCache = F
 
+###########  Spacia for each receiving gene  ###########
 for (mainI in 1:length(recGenes)) {
   receiving_gene = recGenes[mainI]
   outFn = outFns[mainI]
@@ -415,7 +409,7 @@ for (mainI in 1:length(recGenes)) {
     exp_receiver_quantile = opt$quantile
     cor_cutoff = opt$corCut
   } else{
-    paramTable = readCsvTsv(opt$paramTable)
+    paramTable = fread(opt$paramTable)
     tmp = paramTable[paramTable$gene_name == receiving_gene, ]
     if (dim(tmp)[1] == 1) {
       cor_cutoff = tmp$cor_cutoff
@@ -431,16 +425,51 @@ for (mainI in 1:length(recGenes)) {
     }
   }
   
-  cors=cor(counts_receiver[receiving_gene,],t(counts_receiver))[1,]
+  
+  
+  
+  # Extract only numeric data excluding the first column for correlation calculation
+  numeric_counts_receiver <- counts_receiver[, .SD, .SDcols = -1]
+  
+  # Ensure that the column names are correctly mapped to avoid including cell id in calculations
+  if (!receiving_gene %in% names(numeric_counts_receiver)) {
+    stop("Receiving gene not found in the data.")
+  }
+  
+  cors <- cor(numeric_counts_receiver[[receiving_gene]], (numeric_counts_receiver))[1,]
+  
   keep=abs(cors)>cor_cutoff
   if (sum(keep, na.rm = T) < 2) {
-    #need to determine behavior
+    
     cat(paste("no genes highly correlated with",receiving_gene,"\n"))
     next
   }
   cat(paste(sum(keep, na.rm = T),"genes highly correlated with",receiving_gene,"\n"))
-  signature=colMeans(counts_receiver[keep,names(exp_sender)]*cors[keep])
-  exp_receiver=1*(signature>quantile(signature,exp_receiver_quantile,na.rm = T))
+  
+  
+  if (!all(names(exp_sender) %in% counts_receiver[[1]])) {
+    stop("Column names in 'exp_sender' do not match 'counts_receiver'.")
+  }
+  
+  
+  
+  counts_receiver_filtered <- counts_receiver[counts_receiver[[1]] %in% names(exp_sender)]
+  numeric_counts_receiver_filtered <- counts_receiver_filtered[, .SD, .SDcols = -1]
+  numeric_counts_receiver_filtered <- numeric_counts_receiver_filtered[, ..keep]
+  
+  cors_filtered <- cors[keep] 
+  
+  # Using set() for an efficient in-place modification
+  for (j in seq_along(cors_filtered)) {
+    set(numeric_counts_receiver_filtered, j = j, value = numeric_counts_receiver_filtered[[j]] * cors_filtered[j])
+  }
+  
+  signature <- rowMeans(numeric_counts_receiver_filtered, na.rm = TRUE)
+  names(signature) <- names(exp_sender)
+  
+  exp_receiver <- as.integer(signature > quantile(signature, exp_receiver_quantile, na.rm = TRUE))
+  
+  
   # users may want to do some trial and errors to choose the tuning parameters 
   # for a good "exp_receiver" 
   maxBags = opt$subSample
@@ -479,7 +508,7 @@ for (mainI in 1:length(recGenes)) {
   # rotation: the contribution of each sending gene expression to each PC
   # beta: the contribution of each PC to receiving gene expression
   # sum(rotation*beta): the contribution of each sending gene to each receiving gene
-  rotation=prcomp(t(counts_sender))$rotation
+  rotation=prcomp((counts_sender[, .SD, .SDcols = -1]))$rotation
   # we have many beta values from multiple MCMC iterations
   # instead of using mean(beta) and multiple with rotation
   # we multiply each beta with rotation and then sum. Then
@@ -498,7 +527,7 @@ for (mainI in 1:length(recGenes)) {
   Sys.time()
   cat('saving raw results... \n')
   
-  save(gene_level_beta, results, nbags, exp_receiver,pos_sender,exp_sender,
+  save(gene_level_beta, results, nbags, exp_receiver,pos_sender,exp_sender,names_sender,
        sending_cell_type , receiving_cell_type, receiving_gene,
        file = rDataFn)
   cat(paste('saved results to', rDataFn, '\n'))
@@ -513,9 +542,9 @@ for (mainI in 1:length(recGenes)) {
   options(scipen=999)
   sendL = c()
   recL = c()
-  for (rec in names(pos_sender)) {
-    tmp = names(pos_sender[[rec]])
-    recL = c(recL, rep(rec, length(tmp)))
+  for (receiver in names(names_sender)) {
+    tmp = names_sender[[receiver]]
+    recL = c(recL, rep(receiver, length(tmp)))
     sendL = c(sendL, tmp)
   }
   
@@ -562,7 +591,7 @@ for (mainI in 1:length(recGenes)) {
                   'sending_cell' = sendL, 
                   'receiving_gene' = rep(receiving_gene, length(sendL)),
                   'avg_primary_instance_score' = rowMeans(results$pip)) #each col is from one mcmc chain
-  save(gene_level_beta, results, nbags, exp_receiver,pos_sender,exp_sender,
+  save(gene_level_beta, results, nbags, exp_receiver,pos_sender,exp_sender,names_sender,
        ii, betas0, bs, file = rDataFn)
   write.csv(betas, file = paste(outFn, '_betas.csv', sep = ''), quote = FALSE, row.names = FALSE)
   write.csv(df, file = paste(outFn, '_pip.csv', sep = ''), quote = FALSE, row.names = FALSE)
@@ -578,3 +607,4 @@ for (mainI in 1:length(recGenes)) {
     break
   }
 }
+
