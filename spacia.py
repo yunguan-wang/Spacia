@@ -760,8 +760,11 @@ if __name__ == "__main__":
     receiver_cell_for_cutoff = r2s_matrix.index.tolist()
     print('Limiting bags to those with at least {} sender cells'.format(bag_size))
     r2s_matrix = r2s_matrix[r2s_matrix.apply(len) >= bag_size]
-    if r2s_matrix.shape[0] < 500:
-        raise ValueError('Number of total bags is too small, job killed.')
+    print('Number of bags: {}'.format(r2s_matrix.shape[0]))
+    if r2s_matrix.shape[0] < 500 :
+        # raise ValueError('Number of total bags is too small, job killed.')
+        Warning('Number of total bags is too small.')
+        pass
     elif r2s_matrix.shape[0]> nb:
         print('Subsample bags for Spacia.')
         r2s_matrix = r2s_matrix.sample(nb, replace=False)
