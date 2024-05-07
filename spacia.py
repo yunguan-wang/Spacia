@@ -1061,7 +1061,7 @@ if __name__ == "__main__":
         
     # update pathway_betas
     c_l = int((ntotal-nwarm)/nthin)
-    agg_mode = 'pca' if receiver_features == 'pca' else 'gene'
+    agg_mode = 'pca' if sender_features == 'pca' else 'gene'
     pathways = process_beta(pathways.copy(), output_path, c_l, nchain,agg_mode)
     pathways.to_csv(os.path.join(output_path, "Pathway_betas.csv"))
     
