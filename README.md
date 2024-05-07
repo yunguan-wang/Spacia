@@ -23,6 +23,7 @@ This project requires R and Python with the following dependencies:
 - Rcpp==1.0.9
 - RcppArmadillo==0.11.2.3.1
 - rjson==0.2.21
+- data.table==1.14.8
   
 #### Python Packages:
 - matplotlib==3.7.2
@@ -37,8 +38,16 @@ We strongly recommend using conda to manage the installation of all dependencies
 conda create --name spacia
 conda activate spacia
 # conda config --add channels conda-forge # If you do not have this channel added before
-conda install r-base=4.0.5 r-coda=0.19-4 r-ggmcmc=1.5.1.1 r-rcpp=1.0.9 r-RcppArmadillo=0.11.2.3.1 r-rjson=0.2.21
 conda install python=3.8 pandas=2.0.3 scikit-learn=1.3.0 numpy=1.24.3 scipy=1.10.1 matplotlib=3.7.2
+
+# If you are having trouble setting up the python env, try remove the version restrictions for the packges.
+conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
+```
+
+Install the R packages:
+```
+R
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson', 'data.table'))
 ```
 
 Then, download this repo.
@@ -70,13 +79,27 @@ Test Succeeded.
 
 ### About the test data
 
-The test data is a randomly generated dataset for the purpose of validating the installation only.
+The test data, available in this repo at `test/input`, is a randomly generated dataset for the purpose of validating the installation only, and thus there is no interpretation associated with the test results.
 
-The test itself contains ~2,500 cells and it should finish in 5 minutes.
+The test data contains a gene expression matrix (`counts.txt`) and a cell metadata table (`spacia_metadata.txt`).
 
-The purpose of the test is only to validate the installation, and the there is no interpretation associated with the test results.
+The gene expression data is a 2,844 x 100 cell-by-gene matrix, where the first column is cell names, and the first row is the gene names. 
+| | gene1 | gene2 | gene3 | gene4 | gene5 |
+| --- | ---| --- | ---| --- | ---|
+| cell_0 | 1.06 | 2.14 | 1.36 | 0.94 | 1.52 |
+| cell_1 | 0.97 | 2.42 | 1.43 | 1.21 | 1.17 |
+| cell_2 | 0.76 | 2.16 | 1.07 | 1.46 | 1.47 |
+| cell_3 | 0.82 | 2.01 | 1.25 | 1.18 | 2.13 |
 
-We have also included the simulation dataset used in our manuscript in `/data/simulation`
+The cell metadata contains spatial coordinates of each cell, as well as its cell type assignment.
+
+| |X|Y|cell_type
+| --- | ---| --- | ---|
+cell_0|0|0|A
+cell_1|0|1|B
+cell_2|0|2|B
+cell_3|0|3|A
+
 
 ## Usage
 
@@ -152,7 +175,7 @@ Diagnostic plots in pdf formats reporting the behavior of each MCMC chains.
 
 Values of **b** and **beta** as calculated during each MCMC iteration/chain. `[Response_name]_[b/beta].txt`
 
-Primary instance scores between each receiver and sender, in long format. To decode this, please refer to the `model_input/metadata.txt` file, and flatten the `Sender_cells` column. You can do this in `Pandas` using the `str.split` and `explod` functions.
+Primary instance scores between each receiver and sender, in long format. To decode this, please refer to the `model_input/metadata.txt` file, and flatten the `Sender_cells` column. You can do this in `Pandas` using the `str.split` and `explode` functions.
 
 
 # R interface
@@ -171,21 +194,30 @@ In additiona to the R packages for `spacia.py`, the following are needed:
 - scales
 - gridExtra
 - dplyr
+  
+Installation commands:
+```
+R
+#core packages 
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson'))
 
+#R interface specific packages
+install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gridExtra', 'dplyr'))
+```
 
 ## Test installation
 
-We provide example data and parameters under `test/input/r_test_data` to test the R interface. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
+We use the same example data under `test/input` to test the R interface. Note that the data and parameters used in the example below is only intended for a quick test and does not produce stable or usable output. For real data, users should use parameters closer to the default values, where possible, and expect higher resource usage and computation time.
 
 ```
 export dir=[path/to/Spacia]
 Rscript $dir/spacia.R \
-	-x $dir/test/input/r_test_data/example_counts.csv -C \
-	-m $dir/test/input/r_test_data/example_meta.csv \
+	-x $dir/test/input/counts.txt \
+	-m $dir/test/input/spacia_metadata.txt \
 	-a $dir/spacia \
-	-r Tumor_cells -s Fibroblasts -g ACKR3 \
-	-q 0.76 -u 0.179 \
-	-l 5000 -w 2500 \
+	-r B -s A -g gene2 \
+	-q 0.252 -u 0.091 \
+	-d 2 -l 5000 -w 2500 \
 	-o $dir/test/r_test/
 ```
 Use `-h` or `--help` to see detailed descriptions of options and inputs. 
@@ -196,7 +228,7 @@ Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_be
 The R interface requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
 <img src="img/cutoffs.png" height="431">
 
-Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/r_test_data/gene_cutoffs.csv) shows the format compatible with `spacia.R` and can be passed to `-t`, and it corresponds to cutoffs of different receiving genes in the case where fibroblasts are sending cells and tumor cells are receiving cells. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
+Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/gene_cutoffs_A-B.txt) shows the format compatible with `spacia.R` and can be passed to `-t`. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
 
 ### Outline for large scale runs
 Consider following these steps if running Spacia on a large scale (e.g. screen for all potential cell-to-cell communications in a MERSCOPE or CosMx dataset).
@@ -207,7 +239,7 @@ We highly recommend users perform their own quality control and normalization. S
 
 #### (2) Determine the scope of the analysis. 
 
-Due to costs in time and computation, we recommend users limit their analysis to cell types and genes of interest if possible. Note that `spacia.R` runs in the 'PCA' mode, thus its performance is not greatly affected by the number of genes in the input data and genes should not be removed to imporve performance. However, since each run consists of a combination of sending cell type, receiving cell type, and receiving gene, we recommend users at least limit the list of receiving genes to the most highly expressed genes in the receiving cells of interest in order to reduce the total number of Spacia jobs. For example, in our analysis of stroma to tumor interactions in prostate Merscope data, we chose the top 200 most highly expressed genes in tumors out of the 500 total genes available as the prospective receiving genes. 
+Due to costs in time and computation, we recommend users limit their analysis to cell types and genes of interest if possible. Note that `spacia.R` runs in the 'PCA' mode, thus its performance is not greatly affected by the number of genes in the input data and genes should not be removed to imporve performance. However, since each run consists of a combination of sending cell type, receiving cell type, and receiving gene, we recommend users at least limit the list of receiving genes to the most highly expressed genes in the receiving cells of interest in order to reduce the total number of Spacia jobs. 
 
 #### (3) Determine receiving gene cutoffs.
 
@@ -215,7 +247,7 @@ Run Spacia with a list of receiving genes as input for `-g`, with one output dir
 
 #### (4) Parallelization.
 
-Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provided these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. This means that it is best to spread jobs to as many systems as possible. Since the memory requirement of each job is relatively low compared with similar tools, Spacia can scale using systems with lower memory capacity, which is often a limiting resource in shared computing environments.
+Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provided these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. From our experience, it’s better to scale Spacia runs using a large number of smaller systems, rather than on one single system with many cores. The relatively low memory usage of a given Spacia run facilitates this approach. We would also like to point out that competing tools such as COMMOT and SpatialDM do not offer the option to distribute the workload like Spacia. For datasets with large cell numbers (> 50k cells), this results in very long run times that cannot be accelerated, with runs potentially lasting days before throwing an error and failing.
 
 ### Contact Us
 If you have any suggestions/ideas for Spacia or are having issues trying to use it, please don't hesitate to reach out to us.

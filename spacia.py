@@ -14,7 +14,8 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import scale
 from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
-from scipy import stats 
+from scipy import stats
+import pprint
 
 def spacia_worker(cmd):
     """
@@ -299,6 +300,10 @@ def contruct_pathways(
                 pathway_dict[pathway_name] = pathway_genes
     return receiver_pathways, sender_pathways
 
+def format_json(dict):
+    f = pprint.pformat(dict, sort_dicts=False)
+    f = f.replace('\'','"')
+    return f
 
 class StreamToLogger(object):
     """
@@ -971,24 +976,21 @@ if __name__ == "__main__":
             if pca_gene is not None:
                 pathway_dict[pca_gene] = {}
 
-        with open(os.path.join(intermediate_folder, fn), "w") as fp:
-            json.dump(pathway_dict, fp)
+        with open(os.path.join(intermediate_folder, fn), "w") as f:
+            f.write(format_json(pathway_dict))
             
     # Writing spacia R job inputs common for each receiver pathways
     # job metadata
     meta_data.to_csv(metadata_fn, sep='\t')
     
     # sender distance and expression json (list of lists)
-    with open(dist_sender_fn, "w") as fp:
-        json.dump(sender_dist_dict, fp)
+    with open(dist_sender_fn, "w") as f:
+        f.write(format_json(sender_dist_dict))
         
-    # with open(exp_sender_fn, "w") as fp:
-    #     json.dump(sender_exp, fp)
-    with open(exp_sender_fn, "w") as fp:
-        for k, v in sender_exp.items():
-            _dict = {k:v}
-            json.dump(_dict, fp)
-            fp.write('\n')
+    # with open(exp_sender_fn, "w") as f:
+    #     f.write(format_json(sender_exp))
+    with open(exp_sender_fn, "w") as f:
+        f.write(format_json(sender_exp))
     
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
