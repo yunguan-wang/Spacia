@@ -16,7 +16,10 @@ This project requires R and Python with the following dependencies:
 ### Dependency
 - R: R>=4.0.5
 - Python: Python>=3.8
-  
+
+#### OS requirement:
+Spacia is developed and tested in Linux environment with x86-64 architecture (Red Hat Enterprise Linux Server 7.9).
+
 #### R Packages:
 - coda==0.19-4
 - ggmcmc==1.5.1.1
