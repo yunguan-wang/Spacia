@@ -9,7 +9,6 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 
 # Python interface
 
-
 ## Installation
 This project requires R and Python with the following dependencies:
 
@@ -103,6 +102,25 @@ cell_1|0|1|B
 cell_2|0|2|B
 cell_3|0|3|A
 
+## Singularity Container
+A `singularity` container is built and tested in `singularity>=4.1`. It can be downloaded by running
+
+```
+cd [path/to/spacia]
+singularity pull --arch amd64 library://yunguanwang/spacia/spacia:latest
+```
+
+To test the singularity container, simply run the following commands:
+```
+cd [path/to/spacia]
+singularity exec python[test.py
+```
+A successful spacia run through the singularity container should produce the same results as seen in the previous **Test** section.
+
+Running spacia.py using singularity will require mapping the local folder to the container. For example, if the input data for `spacia.py` is in the `/data/input` folder, and you want to map it to the `/wd` folder for the singularity container to use, run the following command:
+```
+singularity exec --bind /data/input:/wd python spacia.py /wd/spacia_inputs_1.txt /wd/spacia_inputs_2.txt [additional_arguments]
+```
 
 ## Usage
 
