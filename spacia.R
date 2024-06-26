@@ -262,7 +262,7 @@ if (!loadedCache) {
   #construct bags names
   names_sender = list()
   for (x in names(exp_sender)) {
-    names_sender[[x]] = counts_sender$cell[exp_sender[[x]]]
+    names_sender[[x]] = counts_sender[,1][exp_sender[[x]]]
   }
   
   nbags = length(pos_sender)
@@ -543,7 +543,7 @@ for (mainI in 1:length(recGenes)) {
   sendL = c()
   recL = c()
   for (receiver in names(names_sender)) {
-    tmp = names_sender[[receiver]]
+    tmp = names_sender[[receiver]]$V1
     recL = c(recL, rep(receiver, length(tmp)))
     sendL = c(sendL, tmp)
   }
@@ -579,11 +579,13 @@ for (mainI in 1:length(recGenes)) {
   bPval = testRes$p.value
   ###two sided t-test for beta
   testRes = apply(betas0, 2, function(x){res = t.test(x); res$p.value})
+  testFdr = p.adjust(testRes, method="BH")
   betas = data.frame('sending_gene' = names(testRes),
                      'receiving_gene' = receiving_gene,
                      'avg_beta' = colMeans(gene_level_beta),
                      'avg_beta_sampled' = colMeans(betas0),
                      "beta_pval" = testRes,
+                     "beta_FDR" = testFdr,
                      'b' = colMeans(results$b)[2],
                      "b_sampled" = mean(bs),
                      "b_pval" = bPval)
