@@ -39,10 +39,10 @@ We strongly recommend using conda to manage the installation of all dependencies
 ```bash
 conda create --name spacia
 conda activate spacia
-# conda config --add channels conda-forge # If you do not have this channel added before
+# conda config --add channels conda-forge # If you do not have this channel added previously
 conda install python=3.8 pandas=2.0.3 scikit-learn=1.3.0 numpy=1.24.3 scipy=1.10.1 matplotlib=3.7.2
 
-# If you are having trouble setting up the python env, try remove the version restrictions for the packges.
+# If you are having trouble setting up the python env, try removing the version restrictions for the packages.
 conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
 ```
 
@@ -268,7 +268,7 @@ Run Spacia with a list of receiving genes as input for `-g`, with one output dir
 
 #### (4) Parallelization.
 
-Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provided these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. From our experience, it’s better to scale Spacia runs using a large number of smaller systems, rather than on one single system with many cores. The relatively low memory usage of a given Spacia run facilitates this approach. We would also like to point out that competing tools such as COMMOT and SpatialDM do not offer the option to distribute the workload like Spacia. For datasets with large cell numbers (> 50k cells), this results in very long run times that cannot be accelerated, with runs potentially lasting days before throwing an error and failing.
+Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provide these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. From our experience, it’s better to scale Spacia runs using a large number of smaller systems, rather than on one single system with many cores. The relatively low memory usage of a given Spacia run facilitates this approach. We would also like to point out that competing tools such as COMMOT and SpatialDM do not offer the option to distribute the workload like Spacia. For datasets with large cell numbers (> 50k cells), this results in very long run times that cannot be accelerated, with runs potentially lasting days before throwing an error and failing.
 
 ### Contact Us
 If you have any suggestions/ideas for Spacia or are having issues trying to use it, please don't hesitate to reach out to us.
