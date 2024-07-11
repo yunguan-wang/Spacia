@@ -113,7 +113,7 @@ singularity pull --arch amd64 library://yunguanwang/spacia/spacia:latest
 To test the singularity container, simply run the following commands:
 ```
 cd [path/to/spacia]
-singularity exec python[test.py
+singularity exec python test.py
 ```
 A successful spacia run through the singularity container should produce the same results as seen in the previous **Test** section.
 
