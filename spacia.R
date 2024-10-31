@@ -1,5 +1,6 @@
 ###########  Libraries  ###########
 library(Rcpp)
+library(RcppProgress)
 library(rjson)
 library("optparse")
 library(ggplot2)
@@ -9,6 +10,7 @@ library(gridExtra)
 library(dplyr)
 library(filelock)
 library(data.table)
+library(jsonlite)
 
 ###########  Options  ###########
 option_list = list(
@@ -61,7 +63,10 @@ option_list = list(
   make_option(c('-c', '--nchain'), type='integer', default=3,
               help='nchain [default = %default]', metavar = 'number'),
   make_option(c('-e', '--nSample'), type='integer', default=50,
-              help='number of samples from each chain to calculate beta/b pvals [default = %default]', metavar = 'number')
+              help='number of samples from each chain to calculate beta/b pvals [default = %default]', metavar = 'number'),
+  make_option(c("--generateCutoffs"), action="store_true", default=TRUE,
+              help="Automatically generate cutoffs (default) or create plots for manual cutoff determination")
+  
 );
 
 opt_parser = OptionParser(option_list=option_list);
@@ -89,7 +94,7 @@ if (is.null(opt$receivingGene)) {
   if (is.null(opt$paramTable)) {
     stop('*********terminating run: no csv provided for "-t"*********\n')
   }
-  paramTable = fread(opt$paramTable)
+  paramTable = fread(opt$paramTable, verbose = FALSE)
   recGenes = paramTable$gene_name
   cat('using receiving genes from cutoffs table\n')
   outFns = recGenes
@@ -208,8 +213,8 @@ if (!loadedCache) {
   cat('reading data...\n')
   options(scipen=999) 
   # do this in spacia
-  meta=fread(opt$inputMeta)
-  counts=fread(opt$inputExpression)
+  meta=fread(opt$inputMeta, verbose = FALSE)
+  counts=fread(opt$inputExpression, verbose = FALSE)
   Sys.time()
   cat('pre-processing data...\n')
   #process count data
@@ -255,7 +260,7 @@ if (!loadedCache) {
   xy_sender <- as.matrix(meta_sender[, .(X, Y)])
   
   # C++ optimized function
-  results <- construct_bags(xy_receiver, xy_sender, meta_receiver[[1]], dist_cutoff^2, min_instance)
+  results <- construct_bags(xy_receiver, xy_sender, meta_receiver[[1]], dist_cutoff^2, min_instance, opt$subSample)
   pos_sender <- results$pos_sender
   exp_sender <- results$exp_sender
   
@@ -281,90 +286,80 @@ if (!loadedCache) {
 }
 
 ###########  Cutoff Plot Generation  ###########
-runPlotOnly = FALSE
+runCutOff = FALSE
 if (is.null(opt$quantile) & is.null(opt$corCut) & is.null(opt$paramTable)) {
-  runPlotOnly = TRUE
+  runCutOff = TRUE
 }
-#make plots to help user determine cutoffs
-if (runPlotOnly) {
-  cat('generating plots for determining cutoffs...\n')
-  plotCutoffs <- function(receiving_gene, file_path, counts_receiver, 
-                          exp_sender, pca_sender, n_path) {
-    quantile_cutoffs = 1:12
-    quantile_cutoffs = (quantile_cutoffs - 1) / 11
-    quantile_cutoffs = quantile_cutoffs[2:11]
+
+if (runCutOff) {
+  # Define output paths
+  if (isDir) {
+    outFns = sapply(recGenes, function(gene) paste(outFn, opt$sendingCell, '-', opt$receivingCell, '_', gene, sep = ''))
+    cutoffPlotFolder = file.path(outFn, "cutoff_plots")
+  } else {
+    outFns = sapply(recGenes, function(gene) paste(outFn, '_', opt$sendingCell, '-', opt$receivingCell, '_', gene, sep = ''))
+    cutoffPlotFolder = file.path(dirname(outFn), "cutoff_plots")
+  }
+  dir.create(cutoffPlotFolder, showWarnings = FALSE, recursive = TRUE)
+  
+  source(file.path(opt$spacia_path, "Automate_Cutoff_Spacia.R"))
+  
+  if (opt$generateCutoffs) {
+    cat('Automatically generating cutoffs...\n')
+    paramTable = data.frame(gene_name = character(), cor_cutoff = numeric(), quantile_cutoff = numeric())
     
-    df <- data.frame(matrix(ncol = 4, nrow = 0))
-    x <- c("signature", "cor_cutoff", "receiver_quantile", "xintercept")
-    colnames(df) <- x
-    cors=cor(counts_receiver[receiving_gene,],t(counts_receiver))[1,]
-    # Find the combination that yields 5~20 highly correlated genes
-    searchgrid = c(1:1000)/1000
-    min_cor_cutoff = 1
-    max_cor_cutoff = 0
-    for (i in searchgrid){
-      num_cor_genes = sum(abs(cors) > i)
-      if (num_cor_genes >= 2 & num_cor_genes <= 20 ){
-        if (i < min_cor_cutoff){
-          min_cor_cutoff = i
-        }
-        if (i > max_cor_cutoff){
-          max_cor_cutoff = i
-        }
+    for (gene in recGenes) {
+      result = AutomatedCutoffGenerator(gene, counts_receiver, cutoffPlotFolder, exp_sender)
+      paramTable = rbind(paramTable, data.frame(gene_name = gene, 
+                                                cor_cutoff = result$data$cor_cutoff, 
+                                                quantile_cutoff = result$data$quantile))
+      
+      # # Save the plot with correct file path
+      # plotFile = file.path(cutoffPlotFolder, paste0(gene, "_automated_cutoff.pdf"))
+      # pdf(plotFile)
+      # print(result$plot)
+      # dev.off()
+    }
+    
+    if (!run1) {
+      # For multiple genes, save in the output directory
+      paramTablePath = file.path(dirname(outFn), "paramTable.csv")
+      write.csv(paramTable, file = paramTablePath, row.names = FALSE)
+      cat('Generated paramTable saved to:', paramTablePath, '\n')
+      opt$paramTable = paramTablePath  # Update opt$paramTable to use the new file
+    } else {
+      # For single gene run, save in cutoff_plots directory with specific naming
+      paramTableName = paste0(opt$sendingCell, "-", opt$receivingCell, "_", recGenes[1], "_paramTable.csv")
+      paramTablePath = file.path(cutoffPlotFolder, paramTableName)
+      write.csv(paramTable, file = paramTablePath, row.names = FALSE)
+      cat('Generated paramTable saved to:', paramTablePath, '\n')
+      
+      # Update opt values
+      opt$quantile = paramTable$quantile_cutoff[1]
+      opt$corCut = paramTable$cor_cutoff[1]
+      cat('Single gene run: Updated quantile cutoff to', opt$quantile, 'and correlation cutoff to', opt$corCut, '\n')
+    }
+  } else {
+    cat('Generating plots for manual cutoff determination...\n')
+    for (gene in recGenes) {
+      plotFile = file.path(cutoffPlotFolder, paste0(gene, "_cutoff_plot.pdf"))
+      CutoffPlotGenerator(gene, counts_receiver, plotFile, exp_sender)
+    }
+    cat('Cutoff plots saved in:', cutoffPlotFolder, '\n')
+    
+    # Modified error handling for manual cutoff determination
+    if (!run1) {
+      if (is.null(opt$paramTable)) {
+        stop('Cutoff plots generated. Please create paramTable.csv before proceeding with the analysis.')
+      } else if (!file.exists(opt$paramTable)) {
+        stop(paste('paramTable file not found at:', opt$paramTable))
+      }
+    } else {
+      if (is.null(opt$quantile) || is.null(opt$corCut)) {
+        stop('Cutoff plot generated. Please provide quantile and correlation cutoffs using -q and -u options before proceeding with the analysis.')
       }
     }
-    cor_cutoffs = seq(from = min_cor_cutoff, to = max_cor_cutoff, length.out = 10)
-    ncgvec = c()
-    for (i in 1:10){ncgvec = c(ncgvec,sum(abs(cors)>cor_cutoffs[i]))}
-    cor_df = data.frame(cor_cutoffs = cor_cutoffs,
-                        num_cor_genes = ncgvec)
-    for (i in cor_cutoffs){
-      keep=abs(cors)>i
-      signature=colMeans(counts_receiver[keep,names(exp_sender)]*cors[keep])
-      #exp_receiver=sum(1*(signature>quantile(signature,j)))
-      for (j in quantile_cutoffs){
-        df_temp = data.frame(signature = signature, 
-                             cor_cutoff = rep(i, length(signature)),
-                             receiver_quantile = rep(j, length(signature)),
-                             xintercept = rep(quantile(signature,j), length(signature))
-        )
-        df = bind_rows(df, df_temp)
-      }
-    }
-    is.num <- sapply(df, is.numeric)
-    df[is.num] <- lapply(df[is.num], round, 5)
-    # Histogram with density plot
-    p = ggplot(df, aes(x=signature)) +
-      geom_histogram(aes(y=after_stat(density)), colour="black", fill="white", bins = 30)+
-      geom_density()+
-      theme_bw() +
-      geom_vline(data = df, aes(xintercept = xintercept), colour = "red")+
-      ggtitle(
-        paste(sending_cell_type,
-              " to ",
-              receiving_cell_type,
-              "; ",
-              receiving_gene,
-              "; ",n_path,"PCs",
-              # pca_cum,
-              sep ="")
-      ) +
-      facet_grid(cor_cutoff~receiver_quantile, labeller = label_both) 
-    combined_plot <-p + gridExtra::tableGrob(cor_df)+ plot_layout(widths = c(5, 1))
-    ggsave(file_path, plot = combined_plot, width = 40, height = 20, dpi = 500)
   }
-  counts_receiver_df <- as.data.frame(counts_receiver)
-  rownames(counts_receiver_df) <-counts_receiver_df[,1]
-  counts_receiver_df<-counts_receiver_df[,-1]
-  counts_receiver_df<-t(counts_receiver_df)
-  for (receiving_gene in recGenes) {
-    file_path = paste(outFn, receiving_gene, '_cutoffPlot', '.pdf', sep = '')
-    plotCutoffs(receiving_gene, file_path, counts_receiver_df, 
-                exp_sender, pca_sender, n_path)
-    s = paste('\rfinished plotting cutoff plots to ', file_path, '\n', sep = '')
-    cat(s)
-  }
-  stop('finished plotting all genes\nuse the plots to determine appropriate quantile and cor. cutoff values (see README for details)\n')
 }
 
 loadCache = F
@@ -409,7 +404,7 @@ for (mainI in 1:length(recGenes)) {
     exp_receiver_quantile = opt$quantile
     cor_cutoff = opt$corCut
   } else{
-    paramTable = fread(opt$paramTable)
+    paramTable = fread(opt$paramTable, verbose = FALSE)
     tmp = paramTable[paramTable$gene_name == receiving_gene, ]
     if (dim(tmp)[1] == 1) {
       cor_cutoff = tmp$cor_cutoff
@@ -470,18 +465,18 @@ for (mainI in 1:length(recGenes)) {
   exp_receiver <- as.integer(signature > quantile(signature, exp_receiver_quantile, na.rm = TRUE))
   
   
-  # users may want to do some trial and errors to choose the tuning parameters 
-  # for a good "exp_receiver" 
-  maxBags = opt$subSample
-  if (maxBags > 0) {
-    if (nbags > maxBags) {
-      cat(paste("Subsampling constructed bags to",maxBags,"\n"))
-      keep1 = sample(1:length(exp_receiver), maxBags)
-      exp_receiver = exp_receiver[keep1]
-      pos_sender = pos_sender[keep1]
-      exp_sender = exp_sender[keep1]
-    }
-  }
+  # # users may want to do some trial and errors to choose the tuning parameters 
+  # # for a good "exp_receiver" 
+  # maxBags = opt$subSample
+  # if (maxBags > 0) {
+  #   if (nbags > maxBags) {
+  #     cat(paste("Subsampling constructed bags to",maxBags,"\n"))
+  #     keep1 = sample(1:length(exp_receiver), maxBags)
+  #     exp_receiver = exp_receiver[keep1]
+  #     pos_sender = pos_sender[keep1]
+  #     exp_sender = exp_sender[keep1]
+  #   }
+  # }
   #reconstruct exp_sender from index
   for (x in names(exp_sender)) {
     exp_sender[[x]] = pca_sender[exp_sender[[x]],1:n_path]
@@ -597,6 +592,13 @@ for (mainI in 1:length(recGenes)) {
        ii, betas0, bs, file = rDataFn)
   write.csv(betas, file = paste(outFn, '_betas.csv', sep = ''), quote = FALSE, row.names = FALSE)
   write.csv(df, file = paste(outFn, '_pip.csv', sep = ''), quote = FALSE, row.names = FALSE)
+  
+  # Convert the list of data frames to JSON
+  json_data <- toJSON(names_sender, pretty = TRUE)
+  
+  # Write the JSON to a file
+  write(json_data, paste(outFn,"names_sender.json", sep = ''))
+  
   cat('saved csv results\n')
   Sys.time()
   # if (file.exists(cacheFn)) {
