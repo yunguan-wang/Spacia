@@ -201,29 +201,20 @@ Primary instance scores between each receiver and sender, in long format. To dec
 
 # R interface
 
-For users who want to directly access the core of Spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an R interface that showcases the few key steps. Please remember to customize the workflow according to your needs/datasets. This interface showcases our suggested pipeline of data processing, and the codes should be self-explanatory. Our analysis codes of the prostate Merscope data (Fig. 2) are derived based on this workflow. The major pre-processing, inference, and post-processing steps shown in this R interface are overall consistent with those in `spacia.py`. We expect different SRT technologies to generate data in different formats and vary in quality. For maximum performance, we suggest that users perform data pre-processing and thorough quality filtering on their own, then massage the filtered data to the right format to feed into the core of Spacia. 
+For users who want to directly access the core of Spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an R interface that showcases the few key steps. Please remember to customize the workflow according to your needs/datasets. This interface showcases our suggested pipeline of data processing, and the codes should be self-explanatory. Our analysis codes of the prostate Merscope data (Fig. 2) are derived based on this workflow. The major pre-processing, inference, and post-processing steps shown in this R interface are overall consistent with those in `spacia.py`. We expect different SRT technologies to generate data in different formats and vary in quality. For maximum performance, we suggest that users perform data pre-processing and thorough quality filtering on their own, then massage the filtered data to the right format to feed into the core of Spacia. Please checkout our [**workflow for spatial gene signature analysis python notebook**](tutorials/SpaciaR_Example_Workflow.ipynb) to run your own analysis and generate plots.
 
 ## Installation
 
-In additiona to the R packages for `spacia.py`, the following are needed:
-#### for I/O and job management
-- optparse
-- filelock
-#### for gene cutoffs plots
-- ggplot2
-- patchwork
-- scales
-- gridExtra
-- dplyr
+In addition to the R packages for `spacia.py`, the following are needed to be installed:
   
 Installation commands:
 ```
 R
 #core packages 
-install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson'))
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson', 'diptest', 'RcppProgress', 'jsonlite'))
 
 #R interface specific packages
-install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gridExtra', 'dplyr'))
+install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gridExtra', 'dplyr', 'RColorBrewer'))
 ```
 
 ## Test installation
@@ -246,8 +237,7 @@ Use `-h` or `--help` to see detailed descriptions of options and inputs.
 Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_betas.csv`, and `Fibroblasts-Tumor_cells_ACKR3_pip.csv` should be generated under `[path/to/Spacia]/test/r_test/`.
 
 ### Determining cutoffs
-The R interface requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
-<img src="img/cutoffs.png" height="431">
+The R interface is updated to support automatic gene signature cutoffs for each receiving gene input, which determines appropriate bag labels from expression weighted by correlation. Simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will determine the cutoffs and generate the paramTable. You may also manually select the cutoffs by setting `--generateCutoffs` as False and find the subplot with a dip(bimodal distribution) with the most correlated genes, and record its correlation cutoff and the quantile cutoff where the dip is located. 
 
 Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/gene_cutoffs_A-B.txt) shows the format compatible with `spacia.R` and can be passed to `-t`. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
 
