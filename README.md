@@ -9,14 +9,16 @@ Multicellular organisms heavily rely on cell-cell interactions to effectively co
 
 # Python interface
 
-
 ## Installation
 This project requires R and Python with the following dependencies:
 
 ### Dependency
 - R: R>=4.0.5
 - Python: Python>=3.8
-  
+
+#### OS requirement:
+Spacia is developed and tested in a Linux environment with x86-64 architecture (Red Hat Enterprise Linux Server 7.9).
+
 #### R Packages:
 - coda==0.19-4
 - ggmcmc==1.5.1.1
@@ -37,10 +39,10 @@ We strongly recommend using conda to manage the installation of all dependencies
 ```bash
 conda create --name spacia
 conda activate spacia
-# conda config --add channels conda-forge # If you do not have this channel added before
+# conda config --add channels conda-forge # If you do not have this channel added previously
 conda install python=3.8 pandas=2.0.3 scikit-learn=1.3.0 numpy=1.24.3 scipy=1.10.1 matplotlib=3.7.2
 
-# If you are having trouble setting up the python env, try remove the version restrictions for the packges.
+# If you are having trouble setting up the python env, try removing the version restrictions for the packages.
 conda install python=3.8 pandas scikit-learn numpy scipy matplotlib
 ```
 
@@ -100,6 +102,25 @@ cell_1|0|1|B
 cell_2|0|2|B
 cell_3|0|3|A
 
+## Singularity Container
+A `singularity` container is built and tested in `singularity>=4.1`. It can be downloaded by running
+
+```
+cd [path/to/spacia]
+singularity pull --arch amd64 library://yunguanwang/spacia/spacia:latest
+```
+
+To test the singularity container, simply run the following commands:
+```
+cd [path/to/spacia]
+singularity exec python test.py
+```
+A successful spacia run through the singularity container should produce the same results as seen in the previous **Test** section.
+
+Running spacia.py using singularity will require mapping the local folder to the container. For example, if the input data for `spacia.py` is in the `/data/input` folder, and you want to map it to the `/wd` folder for the singularity container to use, run the following command:
+```
+singularity exec --bind /data/input:/wd python spacia.py /wd/spacia_inputs_1.txt /wd/spacia_inputs_2.txt [additional_arguments]
+```
 
 ## Usage
 
@@ -180,29 +201,20 @@ Primary instance scores between each receiver and sender, in long format. To dec
 
 # R interface
 
-For users who want to directly access the core of Spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an R interface that showcases the few key steps. Please remember to customize the workflow according to your needs/datasets. This interface showcases our suggested pipeline of data processing, and the codes should be self-explanatory. Our analysis codes of the prostate Merscope data (Fig. 2) are derived based on this workflow. The major pre-processing, inference, and post-processing steps shown in this R interface are overall consistent with those in `spacia.py`. We expect different SRT technologies to generate data in different formats and vary in quality. For maximum performance, we suggest that users perform data pre-processing and thorough quality filtering on their own, then massage the filtered data to the right format to feed into the core of Spacia. 
+For users who want to directly access the core of Spacia and perform more flexible analyses (we strongly encourage you to do so) , we provide an R interface that showcases the few key steps. Please remember to customize the workflow according to your needs/datasets. This interface showcases our suggested pipeline of data processing, and the codes should be self-explanatory. Our analysis codes of the prostate Merscope data (Fig. 2) are derived based on this workflow. The major pre-processing, inference, and post-processing steps shown in this R interface are overall consistent with those in `spacia.py`. We expect different SRT technologies to generate data in different formats and vary in quality. For maximum performance, we suggest that users perform data pre-processing and thorough quality filtering on their own, then massage the filtered data to the right format to feed into the core of Spacia. Please checkout our [**workflow for spatial gene signature analysis python notebook**](tutorials/SpaciaR_Example_Workflow.ipynb) to run your own analysis and generate plots.
 
 ## Installation
 
-In additiona to the R packages for `spacia.py`, the following are needed:
-#### for I/O and job management
-- optparse
-- filelock
-#### for gene cutoffs plots
-- ggplot2
-- patchwork
-- scales
-- gridExtra
-- dplyr
+In addition to the R packages for `spacia.py`, the following are needed to be installed:
   
 Installation commands:
 ```
 R
 #core packages 
-install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson'))
+install.packages(c('coda', 'ggmcmc', 'Rcpp', 'RcppArmadillo', 'rjson', 'diptest', 'RcppProgress', 'jsonlite'))
 
 #R interface specific packages
-install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gridExtra', 'dplyr'))
+install.packages(c('optparse', 'filelock', 'ggplot2', 'patchwork', 'scales', 'gridExtra', 'dplyr', 'RColorBrewer'))
 ```
 
 ## Test installation
@@ -225,8 +237,7 @@ Use `-h` or `--help` to see detailed descriptions of options and inputs.
 Outputs `Fibroblasts-Tumor_cells_ACKR3.RData`, `Fibroblasts-Tumor_cells_ACKR3_betas.csv`, and `Fibroblasts-Tumor_cells_ACKR3_pip.csv` should be generated under `[path/to/Spacia]/test/r_test/`.
 
 ### Determining cutoffs
-The R interface requires the receiving gene cutoffs as inputs. These cutoffs are used to calculate a gene signature to reduce the effects of dropout and are critical for model performance. Manual determination of these cutoffs was found to be the most reliable, and the same process was used for the prostate Merscope data in the manuscript. To determine the cutoffs, simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will generate the relavant plots as pdfs. For each plot, first find the correlation cutoff (for `-u`) by looking for the first row of plots that displays a bimodal distribution. Then, the quantile cutoff (`-q`) can be found by picking the column where the vertical red line most cleanly seperates the two distributions. 
-<img src="img/cutoffs.png" height="431">
+The R interface is updated to support automatic gene signature cutoffs for each receiving gene input, which determines appropriate bag labels from expression weighted by correlation. Simply omit the relevant options (`-q`, `-u`, and `-t`) and `spacia.R` will determine the cutoffs and generate the paramTable. You may also manually select the cutoffs by setting `--generateCutoffs` as False and find the subplot with a dip(bimodal distribution) with the most correlated genes, and record its correlation cutoff and the quantile cutoff where the dip is located. 
 
 Different cutoffs must be used for different combinations of receiving cell and receiving gene, and we recommend finding new cutoffs for each sending cell type as well. The included [example](test/input/gene_cutoffs_A-B.txt) shows the format compatible with `spacia.R` and can be passed to `-t`. This is analogues to the automated process in `spacia.py` if `--response_exp_cutoff 'auto'` is used, but is more reliable. 
 
@@ -247,7 +258,7 @@ Run Spacia with a list of receiving genes as input for `-g`, with one output dir
 
 #### (4) Parallelization.
 
-Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provided these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. From our experience, it’s better to scale Spacia runs using a large number of smaller systems, rather than on one single system with many cores. The relatively low memory usage of a given Spacia run facilitates this approach. We would also like to point out that competing tools such as COMMOT and SpatialDM do not offer the option to distribute the workload like Spacia. For datasets with large cell numbers (> 50k cells), this results in very long run times that cannot be accelerated, with runs potentially lasting days before throwing an error and failing.
+Spacia jobs are independent of each other and can be run on different systems simultaneously. If a shared filesystem is available for output, users can simply run multiple instances of Spacia with the same output directory for each sending-receiving cell combination and leave `-g` blank, in which case all receiving genes in the corresponding csv entered for `-t` will be processed iteratively and lock files are used to avoid duplicate runs. Otherwise, manually divide the receiving genes for each cell type combination and provide these different lists as inputs for `-g` for seperate runs. After testing, we found that multiprocessing often results in longer overall run time for `spacia.R`, and we therefore did not include multiprocessing capability. We do not recommend running more than two `spacia.R` instances in parallel on one system, and systems with less than 20 physical CPU cores should only run jobs sequentially. From our experience, it’s better to scale Spacia runs using a large number of smaller systems, rather than on one single system with many cores. The relatively low memory usage of a given Spacia run facilitates this approach. We would also like to point out that competing tools such as COMMOT and SpatialDM do not offer the option to distribute the workload like Spacia. For datasets with large cell numbers (> 50k cells), this results in very long run times that cannot be accelerated, with runs potentially lasting days before throwing an error and failing.
 
 ### Contact Us
 If you have any suggestions/ideas for Spacia or are having issues trying to use it, please don't hesitate to reach out to us.

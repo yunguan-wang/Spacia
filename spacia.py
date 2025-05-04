@@ -365,6 +365,7 @@ def process_b(df_b, spacia_res_path, chain_size, n_chains):
         arr = np.array(arr)
         pval = stats.ttest_1samp(arr, 0, alternative='less')[1]
         df_b.loc[fn, 'pval'] = pval
+    df_b['pval_adj'] = p_adjust_bh(df_b['pval'])
     return df_b
 
 def process_beta(
@@ -416,7 +417,17 @@ def process_beta(
                     ] = pval
     if mode == 'pca':
         pathway_beta = pd.DataFrame(pathway_beta).set_index('RG')
+    pathway_beta['pval_adj'] = p_adjust_bh(pathway_beta['pval'])
     return pathway_beta
+
+def p_adjust_bh(p):
+    """Benjamini-Hochberg p-value correction for multiple hypothesis testing."""
+    p = np.asfarray(p)
+    by_descend = p.argsort()[::-1]
+    by_orig = by_descend.argsort()
+    steps = float(len(p)) / np.arange(len(p), 0, -1)
+    q = np.minimum(1, np.minimum.accumulate(steps * p[by_descend]))
+    return q[by_orig]
 #%%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -426,9 +437,9 @@ if __name__ == "__main__":
             and the cells from the neighborhood are referred to as 'sender' cells. The interactant \
             expressed in the receiver cells, through which the interactions are to be studied, are referred \
             to as 'Response', while the interactant expressed in the sender cells that potentially \
-            influence the responder genes are called signal 'Signal'. The Goal of Spacia is to determine the \
+            influences the responder genes are called 'Signal'. The Goal of Spacia is to determine the \
             possibility and maginitude of how 'signal' gene(s) in 'sender' cells affect \
-            'response' gene(s) in 'receiver' cells on a single cell level."
+            'response' gene(s) in 'receiver' cells on a single-cell level."
 )
 
     parser.add_argument(
@@ -1073,13 +1084,3 @@ if __name__ == "__main__":
     # Remove model_input files
     if not keep:
         os.system("rm -rf {}".format(intermediate_folder))
-# %%
-# import matplotlib.pyplot as plt
-# test = cpm.loc[receiver_candidates]
-# genes = test.mean().sort_values(ascending=False).index[:50]
-# _, ax = plt.subplots(10,5, figsize = (20,40))
-# ax = ax.ravel()
-# for i, g in enumerate(genes):
-#     ax[i].hist(test[g], bins=30)
-#     ax[i].set_title(g)
-# # %%
