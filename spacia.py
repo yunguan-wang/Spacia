@@ -1,15 +1,20 @@
 #%%
 import os
+import glob
+import hashlib
+import subprocess
+import shlex
 import sys
 import argparse
 import logging
 import csv
 import json
-from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.spatial import cKDTree
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import scale
 from sklearn.mixture import GaussianMixture
@@ -21,7 +26,7 @@ def spacia_worker(cmd):
     """
     worker function for multiprocessing.
     """
-    os.system(cmd)
+    subprocess.run(shlex.split(cmd) if isinstance(cmd, str) else cmd, check=True)
     # remove temp job input files
     # os.system('rm -f {}'.format(' '.join(spacia_job_inputs)))
     return
@@ -100,20 +105,120 @@ def find_sender_candidates(r_cells, s_cells, locations, dist_cutoff=30):
     r_cells, s_cells: list of spot ids.
     locations: pd.DataFrame of X, Y locations
     """
-    pip = pd.Series(dtype=object)
-    n_chunks = int(np.ceil(len(r_cells)/10000))
-    for c in range(n_chunks):
-        r_cells_chunk = r_cells[c*10000 : (c+1)*10000]
-        rl = locations.loc[r_cells_chunk].values.reshape(-1, 2)
-        sl = locations.loc[s_cells].values.reshape(-1, 2)
-        dist_to_senders = cdist(rl,sl)
-        crit = dist_to_senders <= dist_cutoff
-        r_candidates = r_cells_chunk[crit.any(axis=1)]
-        crit = crit[crit.any(axis=1)]
-        _pip = pd.Series([s_cells[crit[i]].tolist() for i in range(len(crit))])
-        _pip.index = r_candidates
-        pip = pd.concat([pip, _pip])
-    return pip
+    # Radius queries avoid allocating receiver-by-sender distance matrices.
+    # Sort sender indices to preserve the original column order and RNG mapping.
+    sender_xy = locations.loc[s_cells, ["X", "Y"]].to_numpy()
+    receiver_xy = locations.loc[r_cells, ["X", "Y"]].to_numpy()
+    tree = cKDTree(sender_xy)
+    neighbors = tree.query_ball_point(receiver_xy, dist_cutoff, return_sorted=True)
+    sender_ids = np.asarray(s_cells)
+    return pd.Series(
+        [sender_ids[ids].tolist() for ids in neighbors if len(ids)],
+        index=[cell for cell, ids in zip(r_cells, neighbors) if len(ids)],
+        dtype=object,
+    )
+
+
+def load_detection_counts(path, sender_gene, receiver_gene):
+    """Read only the two detection genes from a raw cell-by-gene TSV."""
+    with open(path, newline='') as handle:
+        header = next(csv.reader(handle, delimiter='\t'))
+    genes = list(dict.fromkeys([sender_gene, receiver_gene]))
+    if any(header.count(gene) != 1 or header.index(gene) == 0 for gene in genes):
+        raise ValueError("Detection counts must contain each selected gene exactly once as a gene column")
+    columns = sorted({0, *(header.index(gene) for gene in genes)})
+    raw = pd.read_csv(path, sep='\t', index_col=0, usecols=columns)
+    if not raw.index.is_unique or raw.index.hasnans:
+        raise ValueError("Detection-count cell IDs must be unique and non-missing")
+    return raw
+
+
+def filter_sender_pairs(r2s_matrix, zero_policy='keep', detection_counts=None,
+                        sender_gene=None, receiver_gene=None, min_senders=2):
+    """Filter raw-count double-zero pairs, without modifying feature fitting.
+
+    Returns (retained neighborhoods, pair audit, receiver audit). A pair removed
+    because its remaining neighborhood is too small is audited separately.
+    """
+    if zero_policy not in ('keep', 'exclude_double_zero'):
+        raise ValueError("Unknown zero policy: " + str(zero_policy))
+    if zero_policy == 'keep':
+        return r2s_matrix.copy(), pd.DataFrame(), pd.DataFrame()
+    if detection_counts is None or not sender_gene or not receiver_gene:
+        raise ValueError("Double-zero exclusion requires raw counts and one sender/receiver gene")
+    if min_senders < 1:
+        raise ValueError("Minimum sender count must be positive")
+    if not detection_counts.index.is_unique or detection_counts.index.hasnans:
+        raise ValueError("Detection-count cell IDs must be unique and non-missing")
+    if not detection_counts.columns.is_unique:
+        raise ValueError("Detection-count gene columns must be unique")
+    genes = list(dict.fromkeys([sender_gene, receiver_gene]))
+    if any(g not in detection_counts.columns for g in genes):
+        raise ValueError("Selected detection gene is missing from raw counts")
+    cells = pd.Index(list(dict.fromkeys(
+        list(r2s_matrix.index) + [s for senders in r2s_matrix for s in senders])))
+    missing = cells.difference(detection_counts.index)
+    if len(missing):
+        raise ValueError("Raw detection counts are missing cells: " + ', '.join(map(str, missing[:10])))
+    raw = detection_counts.loc[cells, genes].apply(pd.to_numeric, errors='raise')
+    values = raw.to_numpy(dtype=float)
+    if not np.isfinite(values).all() or (values < 0).any() or (values != np.floor(values)).any():
+        raise ValueError("Detection counts must be finite, nonnegative integer transcript counts; missing is not zero")
+    retained = {}
+    pair_rows, receiver_rows = [], []
+    for receiver, senders in r2s_matrix.items():
+        receiver_count = raw.at[receiver, receiver_gene]
+        sender_counts = raw.loc[senders, sender_gene].to_numpy()
+        double_zero = (sender_counts == 0) & (receiver_count == 0)
+        remaining = [s for s, drop in zip(senders, double_zero) if not drop]
+        keep_receiver = len(remaining) >= min_senders
+        if keep_receiver:
+            retained[receiver] = remaining
+        receiver_rows.append(dict(receiver=receiver, receiver_count=receiver_count,
+                                  senders_before=len(senders), double_zero_pairs=int(double_zero.sum()),
+                                  senders_after_pair_filter=len(remaining), retained=keep_receiver))
+        for sender, count, drop in zip(senders, sender_counts, double_zero):
+            action = ('excluded_double_zero' if drop else
+                      'retained' if keep_receiver else 'excluded_small_neighborhood')
+            pair_rows.append(dict(receiver=receiver, sender=sender, receiver_count=receiver_count,
+                                  sender_count=count, double_zero=bool(drop), action=action))
+    return (pd.Series(retained, dtype=object), pd.DataFrame(pair_rows),
+            pd.DataFrame(receiver_rows))
+
+
+def prepare_zero_policy(args, parser):
+    """Validate explicit raw-count semantics and prevent incompatible resume."""
+    config = dict(mode=args.zero_policy)
+    if args.zero_policy == 'exclude_double_zero':
+        for name, gene in [('sender', args.sender_features), ('receiver', args.receiver_features)]:
+            if (not gene or gene in ('all', 'pca') or ',' in gene or '|' in gene
+                    or gene.lower().endswith('.csv')):
+                parser.error("exclude_double_zero requires one gene in -sf and one gene in -rf")
+        if not args.detection_counts:
+            parser.error("exclude_double_zero requires --detection-counts RAW_COUNTS.tsv")
+        if args.bag_size < 1:
+            parser.error("--bag_size must be positive")
+        raw = load_detection_counts(args.detection_counts, args.sender_features, args.receiver_features)
+        digest = hashlib.sha256()
+        with open(args.detection_counts, 'rb') as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                digest.update(chunk)
+        config.update(sender_gene=args.sender_features, receiver_gene=args.receiver_features,
+                      detection_counts=os.path.realpath(args.detection_counts),
+                      detection_counts_sha256=digest.hexdigest(), min_senders=args.bag_size)
+    else:
+        raw = None
+    marker = os.path.join(args.output_path, 'zero_policy.json')
+    if os.path.exists(marker):
+        with open(marker) as handle:
+            if json.load(handle) != config:
+                raise ValueError("Zero policy, detection genes or raw counts differ from this output directory; use a fresh --output_path")
+    elif args.zero_policy != 'keep' and glob.glob(os.path.join(args.output_path, '*', '*_log.txt')):
+        raise ValueError("Existing results have no zero-policy record; use a fresh --output_path for exclusion")
+    os.makedirs(args.output_path, exist_ok=True)
+    with open(marker, 'w') as handle:
+        json.dump(config, handle, indent=2)
+    return raw, config
 
 
 def preprocessing_counts(
@@ -341,7 +446,8 @@ def process_b(df_b, spacia_res_path, chain_size, n_chains):
     planned = os.listdir(spacia_res_path)
     for fn in [
         'Interactions.csv', 'B_and_FDR.csv', 'spacia_log.txt', 
-        'Pathway_betas.csv', 'spacia_r.log', 'model_input']:
+        'Pathway_betas.csv', 'spacia_r.log', 'model_input', 'zero_policy.json',
+        'zero_policy_pairs.csv', 'zero_policy_receivers.csv', 'zero_policy_summary.json']:
         try:
             planned.remove(fn)
         except:
@@ -641,6 +747,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_path", "-o", type=str, default="spacia", help="Output path"
     )
+    parser.add_argument(
+        "--workers", type=int, default=min(4, os.cpu_count() or 1),
+        help="Maximum concurrent R jobs; limited to the number of receiver features.",
+    )
+    parser.add_argument(
+        "--cpp-cache-dir", default=None,
+        help="Persistent compiled-model cache (default: .spacia_cache beside the code).",
+    )
+    parser.add_argument(
+        "--zero-policy", choices=['keep', 'exclude_double_zero'], default='keep',
+        help="Keep all spatial pairs (default), or remove pairs with zero raw transcripts in both named genes.",
+    )
+    parser.add_argument(
+        "--detection-counts", default=None,
+        help="Raw integer cell-by-gene count TSV for exclusion. Requires single-gene -sf/-rf; never uses scaled expression or binary responses to define zero.",
+    )
     ######## Setting up ########
     # Debug param
     # args = parser.parse_args(
@@ -659,6 +781,9 @@ if __name__ == "__main__":
 #%%
     ######## Setting up ########
     args = parser.parse_args()
+    detection_counts, zero_config = prepare_zero_policy(args, parser)
+    if args.cpp_cache_dir:
+        os.environ["SPACIA_CACHE_DIR"] = os.path.abspath(args.cpp_cache_dir)
     counts = args.counts
     spot_meta = args.spot_meta
     receiver_cluster = args.receiver_cluster
@@ -741,6 +866,9 @@ if __name__ == "__main__":
     else:
         cpm = counts
     cpm, spot_meta = cpm.align(spot_meta, join="inner", axis=0)
+    if args.zero_policy == 'exclude_double_zero' and any(
+            gene not in cpm.columns for gene in [sender_features, receiver_features]):
+        raise ValueError("Both selected detection genes must also exist in the expression matrix")
 
     # catch error where a wrong cell cluster name is provided.
     for c_name in [receiver_cluster, sender_cluster]:
@@ -784,6 +912,8 @@ if __name__ == "__main__":
     elif r2s_matrix.shape[0]> nb:
         print('Subsample bags for Spacia.')
         r2s_matrix = r2s_matrix.sample(nb, replace=False)
+    if r2s_matrix.empty:
+        raise ValueError("No receiver neighborhoods satisfy the minimum sender count")
     sender_candidates = list(set(r2s_matrix.sum()))
     receiver_candidates = r2s_matrix.index.tolist()
 
@@ -822,12 +952,6 @@ if __name__ == "__main__":
     for i in dist_r2s.index:
         sender_dist_dict[i] = dist_r2s[i].tolist()
 
-    # contruct and save metadata
-    meta_data = spot_meta.loc[receiver_candidates, :"Y"]
-    meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
-    meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
-    meta_data = pd.concat([meta_data, meta_data_senders])
-
     # contruct and save sender exp
     if sender_features == 'pca':
         sender_pathway_exp = sender_pathways['Sender_y']
@@ -850,6 +974,47 @@ if __name__ == "__main__":
     # )
     # sender_pathway_exp['dummy'] = dummy_pathway
         
+    # Fit features on the original cohort, then apply the raw-count pair mask.
+    # The receiver cutoff population above is also left unchanged.
+    distance_normalizer = None
+    if args.zero_policy == 'exclude_double_zero':
+        original_r2s = r2s_matrix
+        distance_normalizer = max(max(d) for d in sender_dist_dict.values())
+        r2s_matrix, pair_audit, receiver_audit = filter_sender_pairs(
+            original_r2s, args.zero_policy, detection_counts,
+            args.sender_features, args.receiver_features, bag_size)
+        pair_audit.to_csv(os.path.join(output_path, 'zero_policy_pairs.csv'), index=False)
+        receiver_audit.to_csv(os.path.join(output_path, 'zero_policy_receivers.csv'), index=False)
+        zero_summary = dict(zero_config,
+            receivers_before=len(original_r2s), receivers_retained=len(r2s_matrix),
+            receivers_removed=len(original_r2s)-len(r2s_matrix),
+            pairs_before=len(pair_audit),
+            double_zero_pairs_removed=int(pair_audit.double_zero.sum()),
+            pairs_removed_small_neighborhood=int(pair_audit.action.eq('excluded_small_neighborhood').sum()),
+            pairs_retained=int(pair_audit.action.eq('retained').sum()),
+            distance_normalizer=distance_normalizer)
+        with open(os.path.join(output_path, 'zero_policy_summary.json'), 'w') as handle:
+            json.dump(zero_summary, handle, indent=2)
+        if r2s_matrix.empty:
+            raise ValueError("Double-zero exclusion leaves no eligible receiver neighborhoods; see zero_policy_* audits")
+        if not np.isfinite(distance_normalizer) or distance_normalizer <= 0:
+            raise ValueError("Cannot normalize distances: the original neighborhoods have no positive distance")
+        filtered_distances = {}
+        for receiver, senders in r2s_matrix.items():
+            keep_senders = set(senders)
+            filtered_distances[receiver] = [d for sender, d in zip(
+                original_r2s[receiver], sender_dist_dict[receiver]) if sender in keep_senders]
+        sender_dist_dict = filtered_distances
+        receiver_candidates = r2s_matrix.index.tolist()
+        retained_senders = {s for senders in r2s_matrix for s in senders}
+        sender_candidates = [s for s in sender_candidates if s in retained_senders]
+
+    # contruct and save metadata
+    meta_data = spot_meta.loc[receiver_candidates, :"Y"]
+    meta_data["Sender_cells"] = r2s_matrix.loc[receiver_candidates].apply(",".join)
+    meta_data_senders = spot_meta.loc[sender_candidates, :"Y"]
+    meta_data = pd.concat([meta_data, meta_data_senders])
+
     sender_exp = (
         r2s_matrix.to_frame()
         .apply(lambda x: sender_pathway_exp.loc[x[0],].values.round(3).tolist(), axis=1)
@@ -873,7 +1038,7 @@ if __name__ == "__main__":
                 log = f.readlines()
                 job_finished = any(
                     list(map(lambda x: 'Time difference' in x, log)))
-        if job_finished:
+        if job_finished and args.zero_policy == 'keep':
             print(job_id + ' is already finished and will be skipped.')
             continue
         
@@ -938,14 +1103,26 @@ if __name__ == "__main__":
             
         receiver_exp = receiver_exp > cutoff
         receiver_exp = receiver_exp + 0
+        if args.zero_policy == 'exclude_double_zero':
+            receiver_audit['response_binary'] = receiver_audit.receiver.map(receiver_exp)
+            receiver_audit.to_csv(os.path.join(output_path, 'zero_policy_receivers.csv'), index=False)
+            before = receiver_exp.loc[original_r2s.index]
+            after = receiver_exp.loc[receiver_candidates]
+            zero_summary.update(response_cutoff=float(cutoff),
+                response_0_before=int(before.eq(0).sum()), response_1_before=int(before.eq(1).sum()),
+                response_0_retained=int(after.eq(0).sum()), response_1_retained=int(after.eq(1).sum()))
+            with open(os.path.join(output_path, 'zero_policy_summary.json'), 'w') as handle:
+                json.dump(zero_summary, handle, indent=2)
         receiver_exp = receiver_exp[receiver_candidates]
         receiver_exp.to_csv(exp_receiver_fn, header=None, index=None)
 
+        if job_finished:
+            print(job_id + ' is already finished; refreshed zero-policy audits without refitting.')
+            continue
         spacia_output_path = os.path.join(output_path, job_id)
         if not os.path.exists(spacia_output_path):
             os.makedirs(spacia_output_path)
         spacia_jobs.append(
-            " ".join(
                 [
                     "Rscript",
                     spacia_script,
@@ -961,12 +1138,11 @@ if __name__ == "__main__":
                     spacia_output_path + "/",
                     plot_mcmc,
                     ext,
-                ]
-            )
+                ] + (["1", str(distance_normalizer)] if distance_normalizer is not None else [])
         )
     
     with open(os.path.join(output_path, 'spacia_r.log'), 'w') as f:
-        f.write('\n'.join(spacia_jobs)) # Save the actual jobs for debug purpose
+        f.write('\n'.join(shlex.join(job) for job in spacia_jobs)) # Save the actual jobs for debug purpose
         
     # Save receiver and sender pathways for reference
     # remove receiver genes from receiver pathway
@@ -1006,9 +1182,24 @@ if __name__ == "__main__":
     ######## Proceed with spacia_job.R ########
     # Run all spacia R jobs
     print('Running spacia_R MCMC MIL models.')
-    with Pool(16) as p:
-        _ = p.map(spacia_worker, spacia_jobs)
-    
+    if args.workers < 1:
+        raise ValueError("--workers must be positive")
+    if spacia_jobs:
+        # Each bounded worker processes a batch in the same R session. Threads
+        # only supervise subprocesses; they do not duplicate Python/NumPy state.
+        n_workers = min(args.workers, len(spacia_jobs))
+        batch_commands = []
+        for worker in range(n_workers):
+            manifest = os.path.join(intermediate_folder, f"worker_{worker}.json")
+            with open(manifest, "w") as f:
+                json.dump([job[2:] for job in spacia_jobs[worker::n_workers]], f)
+            batch_commands.append(["Rscript", os.path.join(spacia_path, "spacia_batch.R"), manifest])
+        if n_workers == 1:
+            spacia_worker(batch_commands[0])
+        else:
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                list(pool.map(spacia_worker, batch_commands))
+
     ######## Collect all results ########
     print('Collecting results.')
     meta_data = pd.read_csv(metadata_fn, index_col=0, sep="\t")

@@ -127,122 +127,14 @@ MICProB_sampler<-function(tidytrain,
     X1 <- parlist$X1
     V_b <- solve(hp_Sig_b_inv + crossprod(X1[,1:2], X1[,1:2]))
     
-    #cat("=============================================================\n")
-    #cat(sprintf("Bayesian Multiple Instance Regression: chain" ,nc, " \n"))
-    
-    # begin time
-    # start_time <- Sys.time()
-    
-    tick = 0.2
-    
-    # Gibbs sampling (warming up)
-    
-    cat("=============================================================\n")
-    cat("Start warming up",nwarm,"MCMC samples!\n")
-    cat("Progress: ")
-    
-    for(iter in 1:nwarm){
-      if(iter %in% seq(round(tick*nwarm),nwarm,by=round(tick*nwarm))){
-        cat(100*iter/nwarm,"% ...")
-      }
-      mcmc_res <- MICProB_1Gibbs_cpp(Xb = X1[,2,drop=F],Xbeta=X1[,-c(1,2), drop = F],
-                                     y = y,
-                                      ninst = m,
-                                      hp_mu_beta = hp_mu_beta,
-                                      hp_mu_b,
-                                      hp_Sig_beta,
-                                      hp_Sig_b,
-                                      beta,
-                                      b,
-                                      delta,
-                                      u,
-                                      z,
-                                      hp_Sig_beta_inv,
-                                      hp_Sig_b_inv,
-                                      V_b)
-
-      # update parameters
-      beta = mcmc_res$beta
-      b = mcmc_res$b
-      delta = mcmc_res$delta
-      u = mcmc_res$u
-      z = mcmc_res$z
-      
-    } # end warm-up
-    cat("\n")
-    cat("Finish warming up!\n")
-    cat("-------------------------------------------------------------\n")
-    
-    niter = ntotal - nwarm
-    nsave = 1 + floor((niter - 1) /nthin)
-    
-    # posterior quantities to be saved
-    beta_post<-matrix(NA,nrow=nsave,ncol=length(beta))
-    b_post<-matrix(NA,nrow=nsave,ncol=length(b))
-    delta_post<-matrix(NA,nrow=nsave,ncol=length(delta))
-    
-    pip_1chain<-rep(0,length(delta))
-    mcmc_1chain <- list()
-    
-    cat("Start extracting",niter,"MCMC samples!\n")
-    cat("Progress :")
-    for(iter in 1:niter){
-      if(iter %in% seq(round(tick*niter),niter,by=round(tick*niter))){
-        cat(100*iter/niter,"% ...")
-      }
-      mcmc_res <- MICProB_1Gibbs_cpp(Xb = X1[,2,drop=F],Xbeta=X1[,-c(1,2), drop = F],
-                                     y = y,
-                                      ninst = m,
-                                      hp_mu_beta = hp_mu_beta,
-                                      hp_mu_b,
-                                      hp_Sig_beta,
-                                      hp_Sig_b,
-                                      beta,
-                                      b,
-                                      delta,
-                                      u,
-                                      z,
-                                      hp_Sig_beta_inv,
-                                      hp_Sig_b_inv,
-                                      V_b)
-
-      # update parmaeters
-      beta = mcmc_res$beta
-      b = mcmc_res$b
-      delta = mcmc_res$delta
-      u = mcmc_res$u
-      z = mcmc_res$z
-      
-      # save posterior samples
-      if(iter %in% seq(nthin,niter,by=nthin)){ # thinning delta
-        if(return_delta){
-          delta_post[iter/nthin,]<-delta
-        }
-        pip_1chain = pip_1chain + delta
-        beta_post[iter/nthin,]<-beta
-        b_post[iter/nthin,]<-b
-      }
-      
-    } # end extracting posterior samples
-    
-    pip_1chain = pip_1chain / nsave
-    cat("\n")
-    cat("Finish MCMC sampling!\n")
-    cat("=============================================================\n")
-    
-    # elapsed time
-    cat(sprintf("Elapsed time for chain%d=%.3f mins: MCMC sampling is done!\n", nc, difftime(Sys.time(), start_time, units = "mins")))
-    
-    # output
-    mcmc_1chain[["beta"]]<-rbind(parlist$beta,beta_post)
-    mcmc_1chain[["b"]]<-rbind(parlist$b,b_post)
-    mcmc_1chain[["pip"]]<-pip_1chain
-    
-    if(return_delta){
-      mcmc_1chain[["delta"]]<-rbind(parlist$delta, delta_post)
-    } else{
-      mcmc_1chain[["delta"]]<-NULL
-    }
+    # Slice fixed designs once; keep iteration state in compiled code.
+    mcmc_1chain <- MICProB_chain_cpp(
+      X1[,2,drop=FALSE], X1[,-c(1,2),drop=FALSE], y, m,
+      hp_mu_beta, hp_mu_b, hp_Sig_beta, hp_Sig_b,
+      beta, b, delta, hp_Sig_beta_inv, hp_Sig_b_inv, V_b,
+      ntotal, nwarm, nthin, return_delta)
+    cat(sprintf("Elapsed time for chain%d=%.3f mins: MCMC sampling is done!\n",
+                nc, difftime(Sys.time(), start_time, units="mins")))
 
     res_mcmc[[nc]]<-mcmc_1chain
     
