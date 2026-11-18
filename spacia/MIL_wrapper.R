@@ -66,7 +66,7 @@ MIL_C2Cinter<-function(exp_receiver,pos_sender,exp_sender,
                             nthin,
                             nchain,
                             #scale,
-                            return_delta=TRUE,
+                            return_delta=FALSE,
                             prior)
   
   # organize results
